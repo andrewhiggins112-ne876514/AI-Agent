@@ -1,0 +1,15 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+
+# Local runtime output
+/logs/
+
+# Temporary files and logs
+*.log
+*.tmp
+*.temp
+*.bak
+
+# Common test cache
+.pytest_cache/

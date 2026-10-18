@@ -6,6 +6,13 @@
 
 ---
 
+## Repository Hygiene
+
+Generated screenshots and runtime logs remain local. Python bytecode caches
+and temporary files are not committed.
+
+---
+
 ## Achievements
 
 ### Development Environment

@@ -10,6 +10,11 @@ action compatibility, and a responsive GUI request flow using Ollama's local
 HTTP API. Multi-step task planning and execution verification remain Phase 3
 work.
 
+## Repository Hygiene
+
+Generated screenshots and runtime logs remain local. Python bytecode caches
+and temporary files are not committed.
+
 ## Purpose
 
 AI-Agent is a personal desktop AI assistant designed to operate as an intelligent layer on top of Windows.

@@ -6,6 +6,11 @@ This roadmap is intentionally grounded in the current repository and its actual 
 
 Phase 3 - Task Execution Engine
 
+## Repository hygiene
+
+Generated screenshots and runtime logs remain local. Python bytecode caches
+and temporary files are not committed.
+
 ## Current state
 
 The project currently provides a local Windows desktop automation prototype. Its GUI sends requests to Ollama's local `/api/generate` endpoint, requests JSON-formatted action plans, normalizes supported response formats, validates actions, and executes them through the existing desktop tools.
