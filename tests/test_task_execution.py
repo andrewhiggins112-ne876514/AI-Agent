@@ -12,6 +12,7 @@ from scripts.task_execution import (
     TaskEventType,
     TaskState,
     TaskStep,
+    VerificationResult,
     VerificationStatus,
     preflight_actions,
     run_task,
@@ -172,7 +173,15 @@ class SequentialTaskRunnerTests(unittest.TestCase):
             executed.append(action["action"])
             return {"ok": True, "result": f"{action['action']} complete"}
 
-        result = run_task(task, event_queue, execute)
+        verification = VerificationResult(
+            VerificationStatus.VERIFIED,
+            "test outcome verified",
+        )
+        with patch(
+            "scripts.task_execution.verify_action",
+            return_value=verification,
+        ):
+            result = run_task(task, event_queue, execute)
         events = self.read_events(event_queue)
 
         self.assertEqual(result.state, TaskState.SUCCEEDED)
@@ -180,6 +189,9 @@ class SequentialTaskRunnerTests(unittest.TestCase):
         self.assertEqual(
             [step.state for step in task.steps],
             [StepState.SUCCEEDED, StepState.SUCCEEDED],
+        )
+        self.assertTrue(
+            all(step.verification_result is verification for step in task.steps)
         )
         self.assertEqual(
             [event.event_type for event in events],
@@ -204,17 +216,27 @@ class SequentialTaskRunnerTests(unittest.TestCase):
         )
         event_queue = Queue()
         executed = []
+        verifier = Mock()
 
         def execute(action):
             executed.append(action["action"])
             return {"ok": False, "error": "simulated failure"}
 
-        result = run_task(task, event_queue, execute)
+        with patch(
+            "scripts.task_execution.verify_action",
+            verifier,
+        ):
+            result = run_task(task, event_queue, execute)
         events = self.read_events(event_queue)
 
         self.assertEqual(result.state, TaskState.FAILED)
         self.assertEqual(executed, ["OPEN_NOTEPAD"])
         self.assertEqual(task.steps[0].state, StepState.FAILED)
+        self.assertEqual(
+            task.steps[0].verification_result.status,
+            VerificationStatus.FAILED,
+        )
+        verifier.assert_not_called()
         self.assertEqual(
             [step.state for step in task.steps[1:]],
             [StepState.SKIPPED, StepState.SKIPPED],
@@ -252,11 +274,18 @@ class SequentialTaskRunnerTests(unittest.TestCase):
         task = self.make_task()
         event_queue = Queue()
 
-        run_task(
-            task,
-            event_queue,
-            lambda action: {"ok": True, "result": action["action"]},
-        )
+        with patch(
+            "scripts.task_execution.verify_action",
+            return_value=VerificationResult(
+                VerificationStatus.VERIFIED,
+                "verified",
+            ),
+        ):
+            run_task(
+                task,
+                event_queue,
+                lambda action: {"ok": True, "result": action["action"]},
+            )
         events = self.read_events(event_queue)
 
         self.assertEqual(events[0].event_type, TaskEventType.TASK_STARTED)
@@ -297,6 +326,132 @@ class SequentialTaskRunnerTests(unittest.TestCase):
         self.assertEqual(
             [event.event_type for event in events],
             [TaskEventType.TASK_STARTED, TaskEventType.TASK_FAILED],
+        )
+
+
+class RunTaskVerificationTests(unittest.TestCase):
+    @staticmethod
+    def make_task():
+        return Task(
+            request="open notepad and type hello",
+            steps=[
+                TaskStep(action="OPEN_NOTEPAD", params={}),
+                TaskStep(action="TYPE_TEXT", params={"text": "hello"}),
+            ],
+        )
+
+    @staticmethod
+    def make_verification(status):
+        return VerificationResult(status, f"{status.value} evidence")
+
+    def test_verified_step_is_succeeded_and_recorded(self):
+        task = self.make_task()
+        event_queue = Queue()
+        verification = self.make_verification(VerificationStatus.VERIFIED)
+
+        with patch(
+            "scripts.task_execution.verify_action",
+            return_value=verification,
+        ) as verifier:
+            result = run_task(
+                task,
+                event_queue,
+                lambda action: {"ok": True, "result": "done"},
+            )
+
+        self.assertEqual(result.state, TaskState.SUCCEEDED)
+        self.assertEqual(task.steps[0].state, StepState.SUCCEEDED)
+        self.assertIs(task.steps[0].verification_result, verification)
+        verifier.assert_called()
+        self.assertEqual(
+            result.result[0]["verification"].status,
+            VerificationStatus.VERIFIED,
+        )
+
+    def test_unverified_step_continues_and_task_is_partial(self):
+        task = self.make_task()
+        event_queue = Queue()
+        verified = self.make_verification(VerificationStatus.VERIFIED)
+        unverified = self.make_verification(VerificationStatus.UNVERIFIED)
+        executions = []
+        results = [verified, unverified]
+
+        def execute(action):
+            executions.append(action["action"])
+            return {"ok": True, "result": "dispatched"}
+
+        with patch(
+            "scripts.task_execution.verify_action",
+            side_effect=results,
+        ):
+            result = run_task(task, event_queue, execute)
+
+        self.assertEqual(result.state, TaskState.PARTIAL)
+        self.assertEqual(executions, ["OPEN_NOTEPAD", "TYPE_TEXT"])
+        self.assertEqual(
+            [step.state for step in task.steps],
+            [StepState.SUCCEEDED, StepState.UNVERIFIED],
+        )
+        self.assertIs(task.steps[1].verification_result, unverified)
+        events = []
+        while not event_queue.empty():
+            events.append(event_queue.get_nowait())
+        self.assertEqual(
+            [
+                event.result["verification"].status
+                for event in events
+                if event.event_type is TaskEventType.STEP_COMPLETED
+            ],
+            [VerificationStatus.VERIFIED, VerificationStatus.UNVERIFIED],
+        )
+
+    def test_failed_verification_fails_task_and_skips_remaining_steps(self):
+        task = Task(
+            request="open notepad, type hello, take screenshot",
+            steps=[
+                TaskStep(action="OPEN_NOTEPAD", params={}),
+                TaskStep(action="TYPE_TEXT", params={"text": "hello"}),
+                TaskStep(action="TAKE_SCREENSHOT", params={}),
+            ],
+        )
+        event_queue = Queue()
+        failed_verification = self.make_verification(VerificationStatus.FAILED)
+        executions = []
+
+        def execute(action):
+            executions.append(action["action"])
+            return {"ok": True, "result": "tool call completed"}
+
+        with patch(
+            "scripts.task_execution.verify_action",
+            return_value=failed_verification,
+        ):
+            result = run_task(task, event_queue, execute)
+
+        self.assertEqual(result.state, TaskState.FAILED)
+        self.assertEqual(executions, ["OPEN_NOTEPAD"])
+        self.assertEqual(task.steps[0].state, StepState.FAILED)
+        self.assertIs(task.steps[0].verification_result, failed_verification)
+        self.assertEqual(
+            [step.state for step in task.steps[1:]],
+            [StepState.SKIPPED, StepState.SKIPPED],
+        )
+        self.assertEqual(
+            result.result[0]["verification"].status,
+            VerificationStatus.FAILED,
+        )
+
+        events = []
+        while not event_queue.empty():
+            events.append(event_queue.get_nowait())
+        self.assertEqual(
+            [event.event_type for event in events],
+            [
+                TaskEventType.TASK_STARTED,
+                TaskEventType.STEP_STARTED,
+                TaskEventType.STEP_FAILED,
+                TaskEventType.TASK_FAILED,
+            ],
         )
 
 

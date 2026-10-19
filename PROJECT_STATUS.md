@@ -176,9 +176,13 @@ remain unimplemented.
 
 Phase 3 Step 4 complete: verification result types and registry-based verifiers
 are implemented for OPEN_NOTEPAD, TAKE_SCREENSHOT, LIST_WINDOWS, MOVE_MOUSE,
-and TYPE_TEXT. TYPE_TEXT remains UNVERIFIED by design. Verifiers are not yet
-integrated into task execution or the GUI; retries and cancellation remain
-unimplemented.
+and TYPE_TEXT. TYPE_TEXT remains UNVERIFIED by design.
+
+Phase 3 Step 5 complete: `run_task()` records each step's verification result.
+VERIFIED steps succeed; UNVERIFIED steps continue execution and produce a
+PARTIAL task result; FAILED verification fails the task and skips all remaining
+steps. Verification is integrated in the task runner but not in the GUI.
+Retries and cancellation remain unimplemented.
 
 ---
 

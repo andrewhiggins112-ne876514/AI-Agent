@@ -387,11 +387,25 @@ def run_task(task, events, action_executor=None):
             return task
 
         step.tool_result = outcome
-        task.result.append(outcome)
         if not outcome["ok"]:
             step.error = str(outcome.get("error", "Action execution failed"))
+            step.verification_result = VerificationResult(
+                VerificationStatus.FAILED,
+                step.error,
+            )
+            task.result.append({
+                "action": step.action,
+                "execution": outcome,
+                "verification": step.verification_result,
+            })
             transition_step_state(step, StepState.FAILED)
-            emit(TaskEventType.STEP_FAILED, step=step, index=index, result=outcome, error=step.error)
+            emit(
+                TaskEventType.STEP_FAILED,
+                step=step,
+                index=index,
+                result=task.result[-1],
+                error=step.error,
+            )
             for pending_step in task.steps[index + 1:]:
                 transition_step_state(pending_step, StepState.SKIPPED)
             task.error = f"Step {index + 1} ({step.action}) failed: {step.error}"
@@ -399,10 +413,73 @@ def run_task(task, events, action_executor=None):
             emit(TaskEventType.TASK_FAILED, step=step, index=index, error=task.error)
             return task
 
-        transition_step_state(step, StepState.SUCCEEDED)
-        emit(TaskEventType.STEP_COMPLETED, step=step, index=index, result=outcome)
+        try:
+            verification = verify_action(action, outcome)
+            if not isinstance(verification, VerificationResult):
+                raise TypeError(
+                    "Action verifier must return a VerificationResult"
+                )
+            if not isinstance(verification.status, VerificationStatus):
+                raise TypeError(
+                    "VerificationResult status must be a VerificationStatus"
+                )
+            if not isinstance(verification.evidence, str):
+                raise TypeError("VerificationResult evidence must be a string")
+        except Exception as error:
+            verification = VerificationResult(
+                VerificationStatus.FAILED,
+                f"Verifier raised {type(error).__name__}: {error}",
+            )
+        step.verification_result = verification
+        step_outcome = {
+            "action": step.action,
+            "execution": outcome,
+            "verification": verification,
+        }
+        task.result.append(step_outcome)
 
-    transition_task_state(task, TaskState.SUCCEEDED)
+        if verification.status is VerificationStatus.FAILED:
+            step.error = verification.evidence
+            transition_step_state(step, StepState.FAILED)
+            emit(
+                TaskEventType.STEP_FAILED,
+                step=step,
+                index=index,
+                result=step_outcome,
+                error=step.error,
+            )
+            for pending_step in task.steps[index + 1:]:
+                transition_step_state(pending_step, StepState.SKIPPED)
+            task.error = (
+                f"Step {index + 1} ({step.action}) verification failed: "
+                f"{step.error}"
+            )
+            transition_task_state(task, TaskState.FAILED)
+            emit(
+                TaskEventType.TASK_FAILED,
+                step=step,
+                index=index,
+                error=task.error,
+            )
+            return task
+
+        if verification.status is VerificationStatus.VERIFIED:
+            transition_step_state(step, StepState.SUCCEEDED)
+        else:
+            transition_step_state(step, StepState.UNVERIFIED)
+        emit(
+            TaskEventType.STEP_COMPLETED,
+            step=step,
+            index=index,
+            result=step_outcome,
+        )
+
+    final_state = (
+        TaskState.PARTIAL
+        if any(step.state is StepState.UNVERIFIED for step in task.steps)
+        else TaskState.SUCCEEDED
+    )
+    transition_task_state(task, final_state)
     emit(TaskEventType.TASK_COMPLETED, result=task.result)
     return task
 
@@ -415,6 +492,7 @@ class TaskStep:
     state: StepState = StepState.PENDING
     attempt_count: int = 0
     tool_result: object | None = None
+    verification_result: VerificationResult | None = None
     error: str | None = None
     created_at: datetime = field(default_factory=_utc_now)
     started_at: datetime | None = None
