@@ -225,6 +225,13 @@ windows and observer errors are represented explicitly and do not change task
 execution or verification outcomes. No window activation or focus changes
 were added.
 
+Phase 3 Step 7B.1 complete: pure, immutable target identity and assessment
+records plus a resolver classify handle, process, title, no-match, and
+ambiguous results at HIGH, MEDIUM, LOW, or UNKNOWN confidence. Title-only
+matches remain LOW confidence. This assessment logic is independent of
+Windows APIs, the GUI, task execution, and verifiers; it does not alter
+execution behavior or verification outcomes.
+
 ---
 
 ## Milestones
