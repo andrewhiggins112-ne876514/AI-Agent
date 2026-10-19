@@ -1,13 +1,18 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from queue import Queue
+import time
 from uuid import uuid4
 
 if __package__:
-    from .tools import validate_action
+    from . import tools
 else:
-    from tools import validate_action
+    import tools
+
+
+validate_action = tools.validate_action
 
 
 class PlanValidationError(ValueError):
@@ -43,6 +48,18 @@ class TaskEventType(str, Enum):
     STEP_STARTED = "step_started"
     STEP_COMPLETED = "step_completed"
     STEP_FAILED = "step_failed"
+
+
+class VerificationStatus(str, Enum):
+    VERIFIED = "verified"
+    UNVERIFIED = "unverified"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    status: VerificationStatus
+    evidence: str
 
 
 @dataclass(frozen=True)
@@ -86,9 +103,157 @@ STEP_STATE_TRANSITIONS = {
     StepState.SKIPPED: set(),
 }
 
+SCREENSHOT_PATH = Path(r"D:\AI-Agent\logs\screenshot.png")
+NOTEPAD_VERIFY_TIMEOUT_SECONDS = 2.0
+NOTEPAD_VERIFY_POLL_INTERVAL_SECONDS = 0.1
+
 
 def _utc_now():
     return datetime.now(timezone.utc)
+
+
+def _execution_value(execution_result):
+    if isinstance(execution_result, dict) and isinstance(
+        execution_result.get("ok"), bool
+    ):
+        if not execution_result["ok"]:
+            return None, VerificationResult(
+                VerificationStatus.FAILED,
+                str(execution_result.get("error", "Action execution failed")),
+            )
+        return execution_result.get("result"), None
+    return execution_result, None
+
+
+def _verify_open_notepad(action, execution_result):
+    _, execution_failure = _execution_value(execution_result)
+    if execution_failure:
+        return execution_failure
+
+    deadline = time.monotonic() + NOTEPAD_VERIFY_TIMEOUT_SECONDS
+    while True:
+        titles = tools.get_windows()
+        matching_title = next(
+            (title for title in titles if "notepad" in title.casefold()),
+            None,
+        )
+        if matching_title:
+            return VerificationResult(
+                VerificationStatus.VERIFIED,
+                f"Visible Notepad window found: {matching_title}",
+            )
+        if time.monotonic() >= deadline:
+            return VerificationResult(
+                VerificationStatus.FAILED,
+                "No visible Notepad window found before the verification timeout",
+            )
+        time.sleep(NOTEPAD_VERIFY_POLL_INTERVAL_SECONDS)
+
+
+def _verify_screenshot(action, execution_result):
+    tool_result, execution_failure = _execution_value(execution_result)
+    if execution_failure:
+        return execution_failure
+
+    screenshot_path = SCREENSHOT_PATH
+    if isinstance(tool_result, Path):
+        screenshot_path = tool_result
+    elif isinstance(tool_result, str):
+        reported_path = Path(tool_result)
+        if reported_path.suffix or "\\" in tool_result or "/" in tool_result:
+            screenshot_path = reported_path
+
+    try:
+        size = screenshot_path.stat().st_size
+    except OSError as error:
+        return VerificationResult(
+            VerificationStatus.FAILED,
+            f"Screenshot output could not be inspected: {error}",
+        )
+    if size <= 0:
+        return VerificationResult(
+            VerificationStatus.FAILED,
+            f"Screenshot output is empty: {screenshot_path}",
+        )
+    return VerificationResult(
+        VerificationStatus.VERIFIED,
+        f"Screenshot exists and is non-empty ({size} bytes): {screenshot_path}",
+    )
+
+
+def _verify_list_windows(action, execution_result):
+    tool_result, execution_failure = _execution_value(execution_result)
+    if execution_failure:
+        return execution_failure
+    if not isinstance(tool_result, list) or any(
+        not isinstance(title, str) for title in tool_result
+    ):
+        return VerificationResult(
+            VerificationStatus.FAILED,
+            "LIST_WINDOWS did not return a list of window titles",
+        )
+    return VerificationResult(
+        VerificationStatus.VERIFIED,
+        f"Received {len(tool_result)} visible window title(s)",
+    )
+
+
+def _verify_move_mouse(action, execution_result):
+    _, execution_failure = _execution_value(execution_result)
+    if execution_failure:
+        return execution_failure
+
+    params = action.get("params", {}) if isinstance(action, dict) else {}
+    expected_position = (params.get("x", 500), params.get("y", 500))
+    try:
+        actual_position = tuple(tools.pyautogui.position())
+    except (OSError, tools.pyautogui.FailSafeException) as error:
+        return VerificationResult(
+            VerificationStatus.FAILED,
+            f"Could not inspect mouse position: {error}",
+        )
+
+    if actual_position != expected_position:
+        return VerificationResult(
+            VerificationStatus.FAILED,
+            f"Mouse is at {actual_position}; expected {expected_position}",
+        )
+    return VerificationResult(
+        VerificationStatus.VERIFIED,
+        f"Mouse is at expected position {expected_position}",
+    )
+
+
+def _verify_type_text(action, execution_result):
+    _, execution_failure = _execution_value(execution_result)
+    if execution_failure:
+        return execution_failure
+    return VerificationResult(
+        VerificationStatus.UNVERIFIED,
+        "Typing was dispatched, but the entered text cannot be read back reliably",
+    )
+
+
+VERIFIER_REGISTRY = {
+    "OPEN_NOTEPAD": _verify_open_notepad,
+    "TAKE_SCREENSHOT": _verify_screenshot,
+    "LIST_WINDOWS": _verify_list_windows,
+    "MOVE_MOUSE": _verify_move_mouse,
+    "TYPE_TEXT": _verify_type_text,
+}
+
+
+def verify_action(action, execution_result):
+    """Look up and run the verifier registered for an action."""
+    if not isinstance(action, dict) or not isinstance(action.get("action"), str):
+        raise ValueError("Action must be an object with a string 'action' field")
+    try:
+        verifier = VERIFIER_REGISTRY[action["action"]]
+    except KeyError as error:
+        raise ValueError(
+            f"No verifier registered for action: {action['action']}"
+        ) from error
+    return verifier(action, execution_result)
 
 
 def preflight_actions(actions):

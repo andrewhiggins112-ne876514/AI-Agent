@@ -1,7 +1,10 @@
+import tempfile
 import unittest
+from pathlib import Path
 from queue import Queue
 from unittest.mock import Mock, patch
 
+from scripts import task_execution
 from scripts.task_execution import (
     PlanValidationError,
     StepState,
@@ -9,10 +12,12 @@ from scripts.task_execution import (
     TaskEventType,
     TaskState,
     TaskStep,
+    VerificationStatus,
     preflight_actions,
     run_task,
     transition_step_state,
     transition_task_state,
+    verify_action,
 )
 from scripts import tools
 
@@ -293,6 +298,129 @@ class SequentialTaskRunnerTests(unittest.TestCase):
             [event.event_type for event in events],
             [TaskEventType.TASK_STARTED, TaskEventType.TASK_FAILED],
         )
+
+
+class ActionVerifierTests(unittest.TestCase):
+    def test_notepad_verifier_reports_visible_notepad(self):
+        with patch.object(tools, "get_windows", return_value=["Untitled - Notepad"]):
+            result = verify_action(
+                {"action": "OPEN_NOTEPAD", "params": {}},
+                {"ok": True, "result": "Opened Notepad"},
+            )
+
+        self.assertEqual(result.status, VerificationStatus.VERIFIED)
+        self.assertIn("Notepad", result.evidence)
+
+    def test_notepad_verifier_fails_when_window_never_appears(self):
+        with (
+            patch.object(tools, "get_windows", return_value=["Calculator"]),
+            patch.object(task_execution, "NOTEPAD_VERIFY_TIMEOUT_SECONDS", 0),
+        ):
+            result = verify_action(
+                {"action": "OPEN_NOTEPAD", "params": {}},
+                {"ok": True, "result": "Opened Notepad"},
+            )
+
+        self.assertEqual(result.status, VerificationStatus.FAILED)
+        self.assertIn("No visible Notepad", result.evidence)
+
+    def test_screenshot_verifier_checks_non_empty_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            screenshot = Path(temp_dir) / "capture.png"
+            screenshot.write_bytes(b"image")
+            with patch.object(task_execution, "SCREENSHOT_PATH", screenshot):
+                result = verify_action(
+                    {"action": "TAKE_SCREENSHOT", "params": {}},
+                    {"ok": True, "result": "Screenshot saved"},
+                )
+
+        self.assertEqual(result.status, VerificationStatus.VERIFIED)
+        self.assertIn("5 bytes", result.evidence)
+
+    def test_screenshot_verifier_fails_for_missing_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_screenshot = Path(temp_dir) / "missing.png"
+            with patch.object(
+                task_execution,
+                "SCREENSHOT_PATH",
+                missing_screenshot,
+            ):
+                result = verify_action(
+                    {"action": "TAKE_SCREENSHOT", "params": {}},
+                    {"ok": True, "result": "Screenshot saved"},
+                )
+
+        self.assertEqual(result.status, VerificationStatus.FAILED)
+        self.assertIn("could not be inspected", result.evidence)
+
+    def test_list_windows_verifier_accepts_list_result(self):
+        result = verify_action(
+            {"action": "LIST_WINDOWS", "params": {}},
+            {"ok": True, "result": ["Notepad", "Explorer"]},
+        )
+
+        self.assertEqual(result.status, VerificationStatus.VERIFIED)
+        self.assertIn("2 visible", result.evidence)
+
+    def test_list_windows_verifier_rejects_invalid_result(self):
+        result = verify_action(
+            {"action": "LIST_WINDOWS", "params": {}},
+            {"ok": True, "result": "Notepad"},
+        )
+
+        self.assertEqual(result.status, VerificationStatus.FAILED)
+
+    def test_move_mouse_verifier_checks_requested_coordinates(self):
+        with patch.object(tools.pyautogui, "position", return_value=(300, 200)):
+            result = verify_action(
+                {"action": "MOVE_MOUSE", "params": {"x": 300, "y": 200}},
+                {"ok": True, "result": "Mouse moved"},
+            )
+
+        self.assertEqual(result.status, VerificationStatus.VERIFIED)
+
+    def test_move_mouse_verifier_uses_default_coordinates(self):
+        with patch.object(tools.pyautogui, "position", return_value=(500, 500)):
+            result = verify_action(
+                {"action": "MOVE_MOUSE", "params": {}},
+                {"ok": True, "result": "Mouse moved"},
+            )
+
+        self.assertEqual(result.status, VerificationStatus.VERIFIED)
+
+    def test_move_mouse_verifier_fails_on_coordinate_mismatch(self):
+        with patch.object(tools.pyautogui, "position", return_value=(0, 0)):
+            result = verify_action(
+                {"action": "MOVE_MOUSE", "params": {"x": 300, "y": 200}},
+                {"ok": True, "result": "Mouse moved"},
+            )
+
+        self.assertEqual(result.status, VerificationStatus.FAILED)
+
+    def test_type_text_remains_unverified_by_design(self):
+        result = verify_action(
+            {"action": "TYPE_TEXT", "params": {"text": "hello"}},
+            {"ok": True, "result": "Typed: hello"},
+        )
+
+        self.assertEqual(result.status, VerificationStatus.UNVERIFIED)
+        self.assertIn("cannot be read back", result.evidence)
+
+    def test_execution_failure_is_reported_by_verifier(self):
+        result = verify_action(
+            {"action": "TYPE_TEXT", "params": {"text": "hello"}},
+            {"ok": False, "error": "tool failure"},
+        )
+
+        self.assertEqual(result.status, VerificationStatus.FAILED)
+        self.assertEqual(result.evidence, "tool failure")
+
+    def test_unknown_action_has_no_registered_verifier(self):
+        with self.assertRaisesRegex(ValueError, "No verifier registered"):
+            verify_action(
+                {"action": "UNKNOWN", "params": {}},
+                {"ok": True, "result": None},
+            )
 
 
 if __name__ == "__main__":

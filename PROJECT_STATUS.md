@@ -174,6 +174,12 @@ events, stops on the first failed action, and marks remaining steps as skipped.
 The runner is not connected to the GUI. Verification, retries, and cancellation
 remain unimplemented.
 
+Phase 3 Step 4 complete: verification result types and registry-based verifiers
+are implemented for OPEN_NOTEPAD, TAKE_SCREENSHOT, LIST_WINDOWS, MOVE_MOUSE,
+and TYPE_TEXT. TYPE_TEXT remains UNVERIFIED by design. Verifiers are not yet
+integrated into task execution or the GUI; retries and cancellation remain
+unimplemented.
+
 ---
 
 ## Milestones
