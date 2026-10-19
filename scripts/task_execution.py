@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from queue import Queue
 from uuid import uuid4
 
 if __package__:
@@ -33,6 +34,28 @@ class StepState(str, Enum):
     UNVERIFIED = "unverified"
     FAILED = "failed"
     SKIPPED = "skipped"
+
+
+class TaskEventType(str, Enum):
+    TASK_STARTED = "task_started"
+    TASK_COMPLETED = "task_completed"
+    TASK_FAILED = "task_failed"
+    STEP_STARTED = "step_started"
+    STEP_COMPLETED = "step_completed"
+    STEP_FAILED = "step_failed"
+
+
+@dataclass(frozen=True)
+class TaskEvent:
+    event_type: TaskEventType
+    task_id: str
+    occurred_at: datetime = field(default_factory=lambda: _utc_now())
+    step_id: str | None = None
+    step_index: int | None = None
+    step_count: int | None = None
+    action: str | None = None
+    result: object | None = None
+    error: str | None = None
 
 
 TASK_STATE_TRANSITIONS = {
@@ -122,6 +145,101 @@ def transition_step_state(step, new_state):
         StepState.SKIPPED,
     }:
         step.finished_at = now
+
+
+def run_task(task, events, action_executor=None):
+    """Preflight and execute all task steps sequentially, stopping on failure."""
+    if task.state is not TaskState.RECEIVED:
+        raise ValueError("Task must be in RECEIVED state before it can run")
+    if any(step.state is not StepState.PENDING for step in task.steps):
+        raise ValueError("All task steps must be PENDING before the task can run")
+    if not hasattr(events, "put"):
+        raise TypeError("events must provide a put(event) method")
+
+    if action_executor is None:
+        if __package__:
+            from .tools import execute_action
+        else:
+            from tools import execute_action
+        action_executor = execute_action
+
+    def emit(event_type, step=None, index=None, result=None, error=None):
+        events.put(TaskEvent(
+            event_type=event_type,
+            task_id=task.task_id,
+            step_id=step.step_id if step else None,
+            step_index=index,
+            step_count=len(task.steps),
+            action=step.action if step else None,
+            result=result,
+            error=error,
+        ))
+
+    transition_task_state(task, TaskState.VALIDATING)
+    emit(TaskEventType.TASK_STARTED)
+
+    actions = [
+        {"action": step.action, "params": step.params}
+        for step in task.steps
+    ]
+    try:
+        preflight_actions(actions)
+    except (PlanValidationError, ValueError) as error:
+        task.error = str(error)
+        transition_task_state(task, TaskState.FAILED)
+        emit(TaskEventType.TASK_FAILED, error=task.error)
+        return task
+
+    transition_task_state(task, TaskState.READY)
+    transition_task_state(task, TaskState.RUNNING)
+    task.result = []
+
+    for index, step in enumerate(task.steps):
+        task.current_step_index = index
+        transition_step_state(step, StepState.RUNNING)
+        step.attempt_count += 1
+        emit(TaskEventType.STEP_STARTED, step=step, index=index)
+
+        action = {"action": step.action, "params": step.params}
+        try:
+            outcome = action_executor(action)
+            if not isinstance(outcome, dict) or not isinstance(outcome.get("ok"), bool):
+                raise ValueError("Action executor must return a structured result with boolean 'ok'")
+        except Exception as error:
+            step.error = str(error)
+            transition_step_state(step, StepState.FAILED)
+            task.result.append({
+                "action": step.action,
+                "ok": False,
+                "error": step.error,
+            })
+            emit(TaskEventType.STEP_FAILED, step=step, index=index, error=step.error)
+            for pending_step in task.steps[index + 1:]:
+                transition_step_state(pending_step, StepState.SKIPPED)
+            task.error = f"Step {index + 1} ({step.action}) failed: {step.error}"
+            transition_task_state(task, TaskState.FAILED)
+            emit(TaskEventType.TASK_FAILED, step=step, index=index, error=task.error)
+            return task
+
+        step.tool_result = outcome
+        task.result.append(outcome)
+        if not outcome["ok"]:
+            step.error = str(outcome.get("error", "Action execution failed"))
+            transition_step_state(step, StepState.FAILED)
+            emit(TaskEventType.STEP_FAILED, step=step, index=index, result=outcome, error=step.error)
+            for pending_step in task.steps[index + 1:]:
+                transition_step_state(pending_step, StepState.SKIPPED)
+            task.error = f"Step {index + 1} ({step.action}) failed: {step.error}"
+            transition_task_state(task, TaskState.FAILED)
+            emit(TaskEventType.TASK_FAILED, step=step, index=index, error=task.error)
+            return task
+
+        transition_step_state(step, StepState.SUCCEEDED)
+        emit(TaskEventType.STEP_COMPLETED, step=step, index=index, result=outcome)
+
+    transition_task_state(task, TaskState.SUCCEEDED)
+    emit(TaskEventType.TASK_COMPLETED, result=task.result)
+    return task
 
 
 @dataclass

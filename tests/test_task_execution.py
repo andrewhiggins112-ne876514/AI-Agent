@@ -1,13 +1,16 @@
 import unittest
+from queue import Queue
 from unittest.mock import Mock, patch
 
 from scripts.task_execution import (
     PlanValidationError,
     StepState,
     Task,
+    TaskEventType,
     TaskState,
     TaskStep,
     preflight_actions,
+    run_task,
     transition_step_state,
     transition_task_state,
 )
@@ -136,6 +139,160 @@ class StepStateTransitionTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Illegal step state transition"):
             transition_step_state(step, StepState.RUNNING)
+
+
+class SequentialTaskRunnerTests(unittest.TestCase):
+    def make_task(self):
+        return Task(
+            request="open notepad and type hello",
+            steps=[
+                TaskStep(action="OPEN_NOTEPAD", params={}),
+                TaskStep(action="TYPE_TEXT", params={"text": "hello"}),
+            ],
+        )
+
+    @staticmethod
+    def read_events(event_queue):
+        events = []
+        while not event_queue.empty():
+            events.append(event_queue.get_nowait())
+        return events
+
+    def test_successful_multistep_execution_is_ordered_and_emits_events(self):
+        task = self.make_task()
+        event_queue = Queue()
+        executed = []
+
+        def execute(action):
+            executed.append(action["action"])
+            return {"ok": True, "result": f"{action['action']} complete"}
+
+        result = run_task(task, event_queue, execute)
+        events = self.read_events(event_queue)
+
+        self.assertEqual(result.state, TaskState.SUCCEEDED)
+        self.assertEqual(executed, ["OPEN_NOTEPAD", "TYPE_TEXT"])
+        self.assertEqual(
+            [step.state for step in task.steps],
+            [StepState.SUCCEEDED, StepState.SUCCEEDED],
+        )
+        self.assertEqual(
+            [event.event_type for event in events],
+            [
+                TaskEventType.TASK_STARTED,
+                TaskEventType.STEP_STARTED,
+                TaskEventType.STEP_COMPLETED,
+                TaskEventType.STEP_STARTED,
+                TaskEventType.STEP_COMPLETED,
+                TaskEventType.TASK_COMPLETED,
+            ],
+        )
+
+    def test_failure_stops_execution_and_skips_remaining_steps(self):
+        task = Task(
+            request="open app, type text, take screenshot",
+            steps=[
+                TaskStep(action="OPEN_NOTEPAD", params={}),
+                TaskStep(action="TYPE_TEXT", params={"text": "hello"}),
+                TaskStep(action="TAKE_SCREENSHOT", params={}),
+            ],
+        )
+        event_queue = Queue()
+        executed = []
+
+        def execute(action):
+            executed.append(action["action"])
+            return {"ok": False, "error": "simulated failure"}
+
+        result = run_task(task, event_queue, execute)
+        events = self.read_events(event_queue)
+
+        self.assertEqual(result.state, TaskState.FAILED)
+        self.assertEqual(executed, ["OPEN_NOTEPAD"])
+        self.assertEqual(task.steps[0].state, StepState.FAILED)
+        self.assertEqual(
+            [step.state for step in task.steps[1:]],
+            [StepState.SKIPPED, StepState.SKIPPED],
+        )
+        self.assertEqual(
+            [event.event_type for event in events],
+            [
+                TaskEventType.TASK_STARTED,
+                TaskEventType.STEP_STARTED,
+                TaskEventType.STEP_FAILED,
+                TaskEventType.TASK_FAILED,
+            ],
+        )
+
+    def test_executor_exception_stops_execution_and_emits_failure(self):
+        task = self.make_task()
+        event_queue = Queue()
+        executed = []
+
+        def execute(action):
+            executed.append(action["action"])
+            raise RuntimeError("tool crashed")
+
+        result = run_task(task, event_queue, execute)
+        events = self.read_events(event_queue)
+
+        self.assertEqual(result.state, TaskState.FAILED)
+        self.assertEqual(executed, ["OPEN_NOTEPAD"])
+        self.assertEqual(task.steps[0].error, "tool crashed")
+        self.assertEqual(task.steps[1].state, StepState.SKIPPED)
+        self.assertEqual(events[-2].event_type, TaskEventType.STEP_FAILED)
+        self.assertEqual(events[-1].event_type, TaskEventType.TASK_FAILED)
+
+    def test_event_order_has_started_before_steps_and_terminal_last(self):
+        task = self.make_task()
+        event_queue = Queue()
+
+        run_task(
+            task,
+            event_queue,
+            lambda action: {"ok": True, "result": action["action"]},
+        )
+        events = self.read_events(event_queue)
+
+        self.assertEqual(events[0].event_type, TaskEventType.TASK_STARTED)
+        self.assertEqual(events[-1].event_type, TaskEventType.TASK_COMPLETED)
+        self.assertEqual(
+            [
+                event.step_index
+                for event in events
+                if event.event_type is TaskEventType.STEP_STARTED
+            ],
+            [0, 1],
+        )
+        self.assertEqual(
+            [
+                event.step_index
+                for event in events
+                if event.event_type is TaskEventType.STEP_COMPLETED
+            ],
+            [0, 1],
+        )
+
+    def test_invalid_plan_fails_before_executor_and_emits_task_failure(self):
+        task = Task(
+            request="open notepad and type",
+            steps=[
+                TaskStep(action="OPEN_NOTEPAD", params={}),
+                TaskStep(action="TYPE_TEXT", params={}),
+            ],
+        )
+        event_queue = Queue()
+        executor = Mock(return_value={"ok": True})
+
+        result = run_task(task, event_queue, executor)
+        events = self.read_events(event_queue)
+
+        self.assertEqual(result.state, TaskState.FAILED)
+        executor.assert_not_called()
+        self.assertEqual(
+            [event.event_type for event in events],
+            [TaskEventType.TASK_STARTED, TaskEventType.TASK_FAILED],
+        )
 
 
 if __name__ == "__main__":

@@ -169,6 +169,11 @@ step state transition rules are implemented and covered by unit tests.
 Preflight does not execute tools. The execution engine, verification, retries,
 cancellation behavior, and GUI integration remain unimplemented.
 
+Phase 3 Step 3 complete: a sequential task runner emits task and step lifecycle
+events, stops on the first failed action, and marks remaining steps as skipped.
+The runner is not connected to the GUI. Verification, retries, and cancellation
+remain unimplemented.
+
 ---
 
 ## Milestones
