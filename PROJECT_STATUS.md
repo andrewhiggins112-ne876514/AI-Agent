@@ -164,6 +164,11 @@ in `scripts/task_execution.py`. These models are not yet connected to runtime
 execution. State transitions, verification, retries, cancellation, and GUI
 progress integration remain unimplemented.
 
+Phase 3 Step 2 complete: whole-plan preflight validation and explicit task and
+step state transition rules are implemented and covered by unit tests.
+Preflight does not execute tools. The execution engine, verification, retries,
+cancellation behavior, and GUI integration remain unimplemented.
+
 ---
 
 ## Milestones

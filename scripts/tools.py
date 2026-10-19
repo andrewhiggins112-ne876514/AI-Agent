@@ -68,6 +68,46 @@ ACTION_PARAMS = {
 }
 
 
+def validate_action(action):
+    """Validate an action without invoking its tool."""
+    if not isinstance(action, dict):
+        raise ValueError("Action must be a JSON object")
+    if set(action) != {"action", "params"}:
+        raise ValueError("Action must contain only 'action' and 'params'")
+
+    action_name = action["action"]
+    if not isinstance(action_name, str) or action_name not in TOOL_MAP:
+        raise ValueError(f"Unknown action: {action_name}")
+
+    params = action["params"]
+    if not isinstance(params, dict):
+        raise ValueError("Action params must be an object")
+
+    expected_params = ACTION_PARAMS[action_name]
+    if action_name == "MOVE_MOUSE":
+        if set(params) not in (set(), {"x", "y"}):
+            raise ValueError("MOVE_MOUSE params must contain both x and y, or neither")
+    elif set(params) != set(expected_params):
+        missing = set(expected_params) - set(params)
+        extra = set(params) - set(expected_params)
+        if missing:
+            raise ValueError(
+                f"Missing required parameter(s): {', '.join(sorted(missing))}"
+            )
+        raise ValueError(f"Unexpected parameter(s): {', '.join(sorted(extra))}")
+
+    for name, value in params.items():
+        expected_type = expected_params.get(name)
+        if expected_type is None or not isinstance(value, expected_type) or (
+            expected_type is int and isinstance(value, bool)
+        ):
+            raise ValueError(f"Invalid parameter '{name}'")
+        if expected_type is str and not value.strip():
+            raise ValueError(f"Parameter '{name}' must not be empty")
+        if expected_type is int and value < 0:
+            raise ValueError(f"Parameter '{name}' must be non-negative")
+
+
 def parse_action_response(response):
     """Parse JSON actions, retaining support for the original line-based format."""
     content = response.strip()
@@ -122,50 +162,14 @@ def execute_action(action):
     action_name = action.get("action") if isinstance(action, dict) else None
     result = {"ok": False, "action": action_name}
 
-    if not isinstance(action, dict):
-        result["error"] = "Action must be a JSON object"
+    try:
+        validate_action(action)
+    except ValueError as error:
+        result["error"] = str(error)
         return result
-    if set(action) != {"action", "params"}:
-        result["error"] = "Action must contain only 'action' and 'params'"
-        return result
-    if not isinstance(action_name, str) or action_name not in TOOL_MAP:
-        result["error"] = f"Unknown action: {action_name}"
-        return result
-
-    params = action.get("params")
-    if not isinstance(params, dict):
-        result["error"] = "Action params must be an object"
-        return result
-
-    expected_params = ACTION_PARAMS[action_name]
-    if action_name == "MOVE_MOUSE":
-        if set(params) not in (set(), {"x", "y"}):
-            result["error"] = "MOVE_MOUSE params must contain both x and y, or neither"
-            return result
-    elif set(params) != set(expected_params):
-        missing = set(expected_params) - set(params)
-        extra = set(params) - set(expected_params)
-        if missing:
-            result["error"] = f"Missing required parameter(s): {', '.join(sorted(missing))}"
-        else:
-            result["error"] = f"Unexpected parameter(s): {', '.join(sorted(extra))}"
-        return result
-
-    for name, value in params.items():
-        expected_type = expected_params.get(name)
-        if expected_type is None or not isinstance(value, expected_type) or (
-            expected_type is int and isinstance(value, bool)
-        ):
-            result["error"] = f"Invalid parameter '{name}'"
-            return result
-        if expected_type is str and not value.strip():
-            result["error"] = f"Parameter '{name}' must not be empty"
-            return result
-        if expected_type is int and value < 0:
-            result["error"] = f"Parameter '{name}' must be non-negative"
-            return result
 
     try:
+        params = action["params"]
         tool_result = TOOL_MAP[action_name](**params)
     except Exception as error:
         result["error"] = str(error)
