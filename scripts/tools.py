@@ -2,7 +2,17 @@ import json
 import pyautogui
 import subprocess
 import win32gui
+import win32process
 import time
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ForegroundWindowSnapshot:
+    title: str | None = None
+    window_handle: int | None = None
+    process_id: int | None = None
+    error: str | None = None
 
 
 def take_screenshot():
@@ -49,6 +59,20 @@ def get_windows():
     win32gui.EnumWindows(callback, windows)
 
     return windows
+
+
+def get_foreground_window_snapshot():
+    hwnd = win32gui.GetForegroundWindow()
+    if not hwnd:
+        return ForegroundWindowSnapshot()
+
+    title = win32gui.GetWindowText(hwnd) or None
+    _, process_id = win32process.GetWindowThreadProcessId(hwnd)
+    return ForegroundWindowSnapshot(
+        title=title,
+        window_handle=int(hwnd),
+        process_id=int(process_id) if process_id else None,
+    )
 
 
 TOOL_MAP = {

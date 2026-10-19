@@ -190,6 +190,21 @@ def _format_verification_result(event):
     return f"{result.status.value}: {result.evidence}"
 
 
+def _format_foreground_window(snapshot):
+    if snapshot.error:
+        return f"Foreground window observation error: {snapshot.error}"
+    if snapshot.window_handle is None:
+        return "Foreground window: none"
+
+    details = []
+    if snapshot.title:
+        details.append(f"title={snapshot.title!r}")
+    details.append(f"handle=0x{snapshot.window_handle:X}")
+    if snapshot.process_id is not None:
+        details.append(f"process id={snapshot.process_id}")
+    return f"Foreground window: {', '.join(details)}"
+
+
 def _display_task_event(event, request):
     task_state = event.task_state.value if event.task_state else "unknown"
     if event.step_index is None:
@@ -206,6 +221,11 @@ def _display_task_event(event, request):
         f"Step state: {step_state} | Verification: {verification}"
     )
     output_box.insert(tk.END, f"{line}\n")
+    if event.foreground_window is not None:
+        output_box.insert(
+            tk.END,
+            f"{_format_foreground_window(event.foreground_window)}\n",
+        )
     status_label.configure(
         text=(
             f"Task: {task_state} | Step: {current_step} | "

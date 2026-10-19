@@ -76,6 +76,7 @@ class TaskEvent:
     task_state: TaskState | None = None
     step_state: StepState | None = None
     verification_result: VerificationResult | None = None
+    foreground_window: tools.ForegroundWindowSnapshot | None = None
 
 
 TASK_STATE_TRANSITIONS = {
@@ -315,7 +316,7 @@ def transition_step_state(step, new_state):
         step.finished_at = now
 
 
-def run_task(task, events, action_executor=None):
+def run_task(task, events, action_executor=None, window_observer=None):
     """Preflight and execute all task steps sequentially, stopping on failure."""
     if task.state is not TaskState.RECEIVED:
         raise ValueError("Task must be in RECEIVED state before it can run")
@@ -330,8 +331,17 @@ def run_task(task, events, action_executor=None):
         else:
             from tools import execute_action
         action_executor = execute_action
+    if window_observer is None:
+        window_observer = tools.get_foreground_window_snapshot
 
-    def emit(event_type, step=None, index=None, result=None, error=None):
+    def emit(
+        event_type,
+        step=None,
+        index=None,
+        result=None,
+        error=None,
+        foreground_window=None,
+    ):
         events.put(TaskEvent(
             event_type=event_type,
             task_id=task.task_id,
@@ -344,6 +354,7 @@ def run_task(task, events, action_executor=None):
             task_state=task.state,
             step_state=step.state if step else None,
             verification_result=step.verification_result if step else None,
+            foreground_window=foreground_window,
         ))
 
     transition_task_state(task, TaskState.VALIDATING)
@@ -369,9 +380,27 @@ def run_task(task, events, action_executor=None):
         task.current_step_index = index
         transition_step_state(step, StepState.RUNNING)
         step.attempt_count += 1
-        emit(TaskEventType.STEP_STARTED, step=step, index=index)
-
         action = {"action": step.action, "params": step.params}
+        try:
+            foreground_window = window_observer()
+            if not isinstance(
+                foreground_window,
+                tools.ForegroundWindowSnapshot,
+            ):
+                raise TypeError(
+                    "Window observer must return a ForegroundWindowSnapshot"
+                )
+        except Exception as error:
+            foreground_window = tools.ForegroundWindowSnapshot(
+                error=f"{type(error).__name__}: {error}"
+            )
+        emit(
+            TaskEventType.STEP_STARTED,
+            step=step,
+            index=index,
+            foreground_window=foreground_window,
+        )
+
         try:
             outcome = action_executor(action)
             if not isinstance(outcome, dict) or not isinstance(outcome.get("ok"), bool):

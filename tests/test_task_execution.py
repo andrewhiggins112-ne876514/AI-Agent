@@ -5,6 +5,7 @@ from queue import Queue
 from unittest.mock import Mock, patch
 
 from scripts import task_execution
+from scripts.tools import ForegroundWindowSnapshot
 from scripts.task_execution import (
     PlanValidationError,
     StepState,
@@ -21,6 +22,52 @@ from scripts.task_execution import (
     verify_action,
 )
 from scripts import tools
+
+
+class ForegroundWindowObserverTests(unittest.TestCase):
+    def test_snapshot_includes_title_handle_and_process_id(self):
+        with (
+            patch.object(
+                tools.win32gui,
+                "GetForegroundWindow",
+                return_value=1234,
+            ),
+            patch.object(
+                tools.win32gui,
+                "GetWindowText",
+                return_value="Untitled - Notepad",
+            ),
+            patch.object(
+                tools.win32process,
+                "GetWindowThreadProcessId",
+                return_value=(111, 5678),
+            ),
+        ):
+            snapshot = tools.get_foreground_window_snapshot()
+
+        self.assertEqual(snapshot.title, "Untitled - Notepad")
+        self.assertEqual(snapshot.window_handle, 1234)
+        self.assertEqual(snapshot.process_id, 5678)
+        self.assertIsNone(snapshot.error)
+
+    def test_snapshot_represents_no_foreground_window(self):
+        with (
+            patch.object(
+                tools.win32gui,
+                "GetForegroundWindow",
+                return_value=0,
+            ),
+            patch.object(tools.win32gui, "GetWindowText") as get_title,
+            patch.object(
+                tools.win32process,
+                "GetWindowThreadProcessId",
+            ) as get_process,
+        ):
+            snapshot = tools.get_foreground_window_snapshot()
+
+        self.assertEqual(snapshot, ForegroundWindowSnapshot())
+        get_title.assert_not_called()
+        get_process.assert_not_called()
 
 
 class PreflightValidationTests(unittest.TestCase):
@@ -148,6 +195,15 @@ class StepStateTransitionTests(unittest.TestCase):
 
 
 class SequentialTaskRunnerTests(unittest.TestCase):
+    def setUp(self):
+        observer_patch = patch.object(
+            task_execution.tools,
+            "get_foreground_window_snapshot",
+            return_value=ForegroundWindowSnapshot(),
+        )
+        observer_patch.start()
+        self.addCleanup(observer_patch.stop)
+
     def make_task(self):
         return Task(
             request="open notepad and type hello",
@@ -211,6 +267,128 @@ class SequentialTaskRunnerTests(unittest.TestCase):
             events[-1].task_state,
             TaskState.SUCCEEDED,
         )
+
+    def test_foreground_snapshot_is_attached_immediately_before_dispatch(self):
+        task = Task(
+            request="type hello",
+            steps=[TaskStep(action="TYPE_TEXT", params={"text": "hello"})],
+        )
+        event_queue = Queue()
+        snapshot = ForegroundWindowSnapshot(
+            title="Untitled - Notepad",
+            window_handle=1234,
+            process_id=5678,
+        )
+        calls = []
+
+        def observe():
+            calls.append("observe")
+            return snapshot
+
+        def execute(action):
+            calls.append("dispatch")
+            return {"ok": True, "result": "Typed: hello"}
+
+        result = run_task(
+            task,
+            event_queue,
+            execute,
+            window_observer=observe,
+        )
+        events = self.read_events(event_queue)
+        step_started = next(
+            event
+            for event in events
+            if event.event_type is TaskEventType.STEP_STARTED
+        )
+
+        self.assertEqual(calls, ["observe", "dispatch"])
+        self.assertIs(step_started.foreground_window, snapshot)
+        self.assertEqual(result.state, TaskState.PARTIAL)
+        self.assertEqual(task.steps[0].state, StepState.UNVERIFIED)
+
+    def test_no_foreground_window_snapshot_does_not_block_execution(self):
+        task = Task(
+            request="type hello",
+            steps=[TaskStep(action="TYPE_TEXT", params={"text": "hello"})],
+        )
+        event_queue = Queue()
+        no_window = ForegroundWindowSnapshot()
+        executor = Mock(return_value={"ok": True, "result": "Typed: hello"})
+
+        result = run_task(
+            task,
+            event_queue,
+            executor,
+            window_observer=lambda: no_window,
+        )
+        events = self.read_events(event_queue)
+        step_started = next(
+            event
+            for event in events
+            if event.event_type is TaskEventType.STEP_STARTED
+        )
+
+        self.assertIs(step_started.foreground_window, no_window)
+        executor.assert_called_once()
+        self.assertEqual(result.state, TaskState.PARTIAL)
+        self.assertEqual(task.steps[0].state, StepState.UNVERIFIED)
+
+    def test_observer_error_is_reported_without_changing_execution_outcome(self):
+        task = Task(
+            request="type hello",
+            steps=[TaskStep(action="TYPE_TEXT", params={"text": "hello"})],
+        )
+        event_queue = Queue()
+        executor = Mock(return_value={"ok": True, "result": "Typed: hello"})
+
+        def observe():
+            raise RuntimeError("foreground API unavailable")
+
+        result = run_task(
+            task,
+            event_queue,
+            executor,
+            window_observer=observe,
+        )
+        events = self.read_events(event_queue)
+        step_started = next(
+            event
+            for event in events
+            if event.event_type is TaskEventType.STEP_STARTED
+        )
+
+        self.assertEqual(
+            step_started.foreground_window.error,
+            "RuntimeError: foreground API unavailable",
+        )
+        executor.assert_called_once()
+        self.assertEqual(result.state, TaskState.PARTIAL)
+        self.assertEqual(task.steps[0].state, StepState.UNVERIFIED)
+        self.assertEqual(
+            task.steps[0].verification_result.status,
+            VerificationStatus.UNVERIFIED,
+        )
+
+    def test_invalid_plan_does_not_observe_foreground_window(self):
+        task = Task(
+            request="type",
+            steps=[TaskStep(action="TYPE_TEXT", params={})],
+        )
+        event_queue = Queue()
+        observer = Mock(return_value=ForegroundWindowSnapshot())
+        executor = Mock()
+
+        result = run_task(
+            task,
+            event_queue,
+            executor,
+            window_observer=observer,
+        )
+
+        observer.assert_not_called()
+        executor.assert_not_called()
+        self.assertEqual(result.state, TaskState.FAILED)
 
     def test_failure_stops_execution_and_skips_remaining_steps(self):
         task = Task(
@@ -337,6 +515,15 @@ class SequentialTaskRunnerTests(unittest.TestCase):
 
 
 class RunTaskVerificationTests(unittest.TestCase):
+    def setUp(self):
+        observer_patch = patch.object(
+            task_execution.tools,
+            "get_foreground_window_snapshot",
+            return_value=ForegroundWindowSnapshot(),
+        )
+        observer_patch.start()
+        self.addCleanup(observer_patch.stop)
+
     @staticmethod
     def make_task():
         return Task(

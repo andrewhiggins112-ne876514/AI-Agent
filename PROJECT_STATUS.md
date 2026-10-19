@@ -217,6 +217,14 @@ The current execution engine correctly distinguishes VERIFIED, UNVERIFIED,
 and FAILED outcomes, and reports PARTIAL task completion when verification
 cannot be established.
 
+Phase 3 Step 7A complete: a read-only foreground-window snapshot captures the
+title, window handle, and process ID when available immediately before each
+action dispatch, after successful preflight. The snapshot is attached to the
+STEP_STARTED event and displayed in GUI progress output. Missing foreground
+windows and observer errors are represented explicitly and do not change task
+execution or verification outcomes. No window activation or focus changes
+were added.
+
 ---
 
 ## Milestones
