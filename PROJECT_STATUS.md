@@ -189,6 +189,34 @@ runner on a worker thread and polls its event queue using Tk's `root.after`.
 Task state, current step, step state, verification evidence, and final task
 state are reported in the GUI. Retries and cancellation remain unimplemented.
 
+### Manual Validation Results
+
+PASS
+- open notepad
+  - Task state progression observed.
+  - Verification succeeded.
+
+PASS
+- take a screenshot
+  - Task state progression observed.
+  - Screenshot verification succeeded.
+
+PASS
+- open notepad and type hello
+  - OPEN_NOTEPAD verified.
+  - TYPE_TEXT unverified by design.
+  - Final task state: PARTIAL.
+
+PASS
+- move mouse to banana
+  - Validation failed before execution.
+  - No execution occurred.
+  - Task failed during validation.
+
+The current execution engine correctly distinguishes VERIFIED, UNVERIFIED,
+and FAILED outcomes, and reports PARTIAL task completion when verification
+cannot be established.
+
 ---
 
 ## Milestones
