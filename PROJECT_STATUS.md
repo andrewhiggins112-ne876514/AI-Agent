@@ -159,6 +159,11 @@ while maintaining backward compatibility.
 
 Phase 3 - Task Execution Engine
 
+Phase 3 Step 1 complete: task and step data models and state enums are defined
+in `scripts/task_execution.py`. These models are not yet connected to runtime
+execution. State transitions, verification, retries, cancellation, and GUI
+progress integration remain unimplemented.
+
 ---
 
 ## Milestones
