@@ -184,6 +184,11 @@ PARTIAL task result; FAILED verification fails the task and skips all remaining
 steps. Verification is integrated in the task runner but not in the GUI.
 Retries and cancellation remain unimplemented.
 
+Phase 3 Step 6 complete: the GUI submits parsed action plans to the task
+runner on a worker thread and polls its event queue using Tk's `root.after`.
+Task state, current step, step state, verification evidence, and final task
+state are reported in the GUI. Retries and cancellation remain unimplemented.
+
 ---
 
 ## Milestones

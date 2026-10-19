@@ -204,6 +204,13 @@ class SequentialTaskRunnerTests(unittest.TestCase):
                 TaskEventType.TASK_COMPLETED,
             ],
         )
+        self.assertEqual(events[0].task_state, TaskState.VALIDATING)
+        self.assertEqual(events[1].task_state, TaskState.RUNNING)
+        self.assertEqual(events[1].step_state, StepState.RUNNING)
+        self.assertEqual(
+            events[-1].task_state,
+            TaskState.SUCCEEDED,
+        )
 
     def test_failure_stops_execution_and_skips_remaining_steps(self):
         task = Task(
@@ -404,6 +411,15 @@ class RunTaskVerificationTests(unittest.TestCase):
             ],
             [VerificationStatus.VERIFIED, VerificationStatus.UNVERIFIED],
         )
+        self.assertEqual(
+            [
+                event.verification_result.status
+                for event in events
+                if event.event_type is TaskEventType.STEP_COMPLETED
+            ],
+            [VerificationStatus.VERIFIED, VerificationStatus.UNVERIFIED],
+        )
+        self.assertEqual(events[-1].task_state, TaskState.PARTIAL)
 
     def test_failed_verification_fails_task_and_skips_remaining_steps(self):
         task = Task(
@@ -440,10 +456,20 @@ class RunTaskVerificationTests(unittest.TestCase):
             result.result[0]["verification"].status,
             VerificationStatus.FAILED,
         )
-
         events = []
         while not event_queue.empty():
             events.append(event_queue.get_nowait())
+        failed_step_event = next(
+            event
+            for event in events
+            if event.event_type is TaskEventType.STEP_FAILED
+        )
+        self.assertEqual(failed_step_event.step_state, StepState.FAILED)
+        self.assertEqual(
+            failed_step_event.verification_result.status,
+            VerificationStatus.FAILED,
+        )
+        self.assertEqual(events[-1].task_state, TaskState.FAILED)
         self.assertEqual(
             [event.event_type for event in events],
             [

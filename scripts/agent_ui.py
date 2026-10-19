@@ -7,7 +7,15 @@ from tkinter import scrolledtext
 import urllib.error
 import urllib.request
 
-from tools import execute_action, parse_action_response
+from task_execution import (
+    Task,
+    TaskEvent,
+    TaskEventType,
+    TaskStep,
+    VerificationResult,
+    run_task,
+)
+from tools import parse_action_response
 
 
 ANSI_ESCAPE_PATTERN = re.compile(
@@ -68,6 +76,7 @@ output_box.pack(pady=10)
 OLLAMA_TIMEOUT_SECONDS = 120
 RESULT_POLL_INTERVAL_MS = 100
 result_queue = queue.Queue()
+task_event_queue = queue.Queue()
 is_processing = False
 
 
@@ -125,23 +134,141 @@ def _show_response(raw_response):
             tk.END,
             f"{json.dumps({'ok': False, 'action': None, 'error': str(error)}, indent=2)}\n"
         )
-        return False
+        return None
 
     output_box.insert(tk.END, "PARSED ACTIONS:\n")
     output_box.insert(tk.END, f"{json.dumps(actions, indent=2)}\n\n")
-    output_box.insert(tk.END, "EXECUTION RESULTS:\n")
+    return actions
 
-    all_succeeded = True
-    for action in actions:
-        execution_result = execute_action(action)
+
+def _run_task_worker(task):
+    try:
+        run_task(task, task_event_queue)
+    except Exception as error:
+        task_event_queue.put(("worker_error", f"{type(error).__name__}: {error}"))
+
+
+def _submit_task(request, actions):
+    task = Task(
+        request=request,
+        steps=[
+            TaskStep(
+                action=action.get("action") if isinstance(action, dict) else action,
+                params=action.get("params") if isinstance(action, dict) else {},
+            )
+            for action in actions
+        ],
+    )
+    output_box.insert(tk.END, "TASK PROGRESS:\n")
+    output_box.insert(tk.END, f"Task state: {task.state.value}\n\n")
+    try:
+        worker = threading.Thread(
+            target=_run_task_worker,
+            args=(task,),
+            daemon=True,
+        )
+        worker.start()
+    except RuntimeError as error:
+        output_box.insert(tk.END, f"Task submission failed: {error}\n")
+        _finish_request("Failed")
+        return
+    root.after(
+        RESULT_POLL_INTERVAL_MS,
+        _poll_task_events,
+        request,
+    )
+
+
+def _format_verification_result(event):
+    result = event.verification_result
+    if not isinstance(result, VerificationResult):
+        if event.event_type is TaskEventType.STEP_STARTED:
+            return "pending"
+        if event.step_state and event.step_state.value in {"failed", "skipped"}:
+            return "not run"
+        return "n/a"
+    return f"{result.status.value}: {result.evidence}"
+
+
+def _display_task_event(event, request):
+    task_state = event.task_state.value if event.task_state else "unknown"
+    if event.step_index is None:
+        current_step = "none"
+    else:
+        current_step = (
+            f"{event.step_index + 1}/{event.step_count} {event.action}"
+        )
+
+    step_state = event.step_state.value if event.step_state else "n/a"
+    verification = _format_verification_result(event)
+    line = (
+        f"Task state: {task_state} | Current step: {current_step} | "
+        f"Step state: {step_state} | Verification: {verification}"
+    )
+    output_box.insert(tk.END, f"{line}\n")
+    status_label.configure(
+        text=(
+            f"Task: {task_state} | Step: {current_step} | "
+            f"{step_state} | Verification: {verification}"
+        )
+    )
+
+    if event.error:
+        output_box.insert(tk.END, f"Task error: {event.error}\n")
+    if event.event_type in {
+        TaskEventType.TASK_COMPLETED,
+        TaskEventType.TASK_FAILED,
+    }:
+        output_box.insert(tk.END, f"Final task state: {task_state}\n\n")
         output_box.insert(
             tk.END,
-            f"{json.dumps(execution_result, ensure_ascii=False)}\n"
+            f"Request {'failed' if task_state == 'failed' else 'completed'}: "
+            f"{request}\n",
         )
-        if not execution_result["ok"]:
-            all_succeeded = False
+        return True
+    return False
 
-    return all_succeeded
+
+def _poll_task_events(request):
+    try:
+        event = task_event_queue.get_nowait()
+    except queue.Empty:
+        root.after(
+            RESULT_POLL_INTERVAL_MS,
+            _poll_task_events,
+            request,
+        )
+        return
+
+    if isinstance(event, tuple) and event[0] == "worker_error":
+        output_box.insert(tk.END, f"Task runner failed: {event[1]}\n")
+        output_box.insert(tk.END, "Final task state: failed\n\n")
+        _finish_request("Failed")
+        return
+
+    if not isinstance(event, TaskEvent):
+        output_box.insert(tk.END, "Task runner emitted an invalid progress event.\n")
+        output_box.insert(tk.END, "Final task state: failed\n\n")
+        _finish_request("Failed")
+        return
+
+    is_terminal = _display_task_event(event, request)
+    if is_terminal:
+        final_status = (
+            event.task_state.value.title()
+            if event.task_state
+            else "Finished"
+        )
+        _finish_request(final_status)
+        output_box.see(tk.END)
+        return
+
+    root.after(
+        RESULT_POLL_INTERVAL_MS,
+        _poll_task_events,
+        request,
+    )
+    output_box.see(tk.END)
 
 
 def _finish_request(status, clear_request=False):
@@ -190,13 +317,12 @@ def _poll_ollama_result(request):
             _finish_request("Failed")
             return
 
-        succeeded = _show_response(payload)
-        if succeeded:
-            output_box.insert(tk.END, f"Request completed: {request}\n")
-            _finish_request("Completed", clear_request=True)
-        else:
+        actions = _show_response(payload)
+        if actions is None:
             output_box.insert(tk.END, f"Request failed: {request}\n")
             _finish_request("Failed")
+        else:
+            _submit_task(request, actions)
     except Exception as error:
         output_box.insert(tk.END, f"Request failed: {error}\n")
         _finish_request("Failed")

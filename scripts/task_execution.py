@@ -73,6 +73,9 @@ class TaskEvent:
     action: str | None = None
     result: object | None = None
     error: str | None = None
+    task_state: TaskState | None = None
+    step_state: StepState | None = None
+    verification_result: VerificationResult | None = None
 
 
 TASK_STATE_TRANSITIONS = {
@@ -338,6 +341,9 @@ def run_task(task, events, action_executor=None):
             action=step.action if step else None,
             result=result,
             error=error,
+            task_state=task.state,
+            step_state=step.state if step else None,
+            verification_result=step.verification_result if step else None,
         ))
 
     transition_task_state(task, TaskState.VALIDATING)
