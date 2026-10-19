@@ -8,8 +8,22 @@ from uuid import uuid4
 
 if __package__:
     from . import tools
+    from .target_awareness import (
+        TargetAssessment,
+        TargetConfidence,
+        TargetIdentity,
+        TargetMatchStatus,
+        assess_foreground_target,
+    )
 else:
     import tools
+    from target_awareness import (
+        TargetAssessment,
+        TargetConfidence,
+        TargetIdentity,
+        TargetMatchStatus,
+        assess_foreground_target,
+    )
 
 
 validate_action = tools.validate_action
@@ -77,6 +91,7 @@ class TaskEvent:
     step_state: StepState | None = None
     verification_result: VerificationResult | None = None
     foreground_window: tools.ForegroundWindowSnapshot | None = None
+    target_assessment: TargetAssessment | None = None
 
 
 TASK_STATE_TRANSITIONS = {
@@ -355,6 +370,7 @@ def run_task(task, events, action_executor=None, window_observer=None):
             step_state=step.state if step else None,
             verification_result=step.verification_result if step else None,
             foreground_window=foreground_window,
+            target_assessment=step.target_assessment if step else None,
         ))
 
     transition_task_state(task, TaskState.VALIDATING)
@@ -394,6 +410,25 @@ def run_task(task, events, action_executor=None, window_observer=None):
             foreground_window = tools.ForegroundWindowSnapshot(
                 error=f"{type(error).__name__}: {error}"
             )
+        if step.action == "TYPE_TEXT":
+            observed_target = None
+            if (
+                foreground_window.error is None
+                and any((
+                    foreground_window.window_handle is not None,
+                    foreground_window.process_id is not None,
+                    foreground_window.title is not None,
+                ))
+            ):
+                observed_target = TargetIdentity(
+                    window_handle=foreground_window.window_handle,
+                    process_id=foreground_window.process_id,
+                    title=foreground_window.title,
+                )
+            step.target_assessment = assess_foreground_target(
+                task.target_identity,
+                observed_target,
+            )
         emit(
             TaskEventType.STEP_STARTED,
             step=step,
@@ -401,10 +436,57 @@ def run_task(task, events, action_executor=None, window_observer=None):
             foreground_window=foreground_window,
         )
 
+        if (
+            step.target_assessment is not None
+            and step.target_assessment.status is TargetMatchStatus.MISMATCH
+            and step.target_assessment.confidence
+            in {TargetConfidence.HIGH, TargetConfidence.MEDIUM}
+        ):
+            step.error = (
+                "TYPE_TEXT was not dispatched: "
+                f"{step.target_assessment.reason}"
+            )
+            step_outcome = {
+                "action": step.action,
+                "dispatched": False,
+                "target_assessment": step.target_assessment,
+            }
+            task.result.append(step_outcome)
+            transition_step_state(step, StepState.FAILED)
+            emit(
+                TaskEventType.STEP_FAILED,
+                step=step,
+                index=index,
+                result=step_outcome,
+                error=step.error,
+            )
+            for pending_step in task.steps[index + 1:]:
+                transition_step_state(pending_step, StepState.SKIPPED)
+            task.error = (
+                f"Step {index + 1} ({step.action}) target precondition failed: "
+                f"{step.error}"
+            )
+            transition_task_state(task, TaskState.FAILED)
+            emit(
+                TaskEventType.TASK_FAILED,
+                step=step,
+                index=index,
+                error=task.error,
+            )
+            return task
+
         try:
             outcome = action_executor(action)
             if not isinstance(outcome, dict) or not isinstance(outcome.get("ok"), bool):
                 raise ValueError("Action executor must return a structured result with boolean 'ok'")
+            target_identity = outcome.get("target_identity")
+            if target_identity is not None and not isinstance(
+                target_identity,
+                TargetIdentity,
+            ):
+                raise ValueError(
+                    "Action executor target_identity must be a TargetIdentity"
+                )
         except Exception as error:
             step.error = str(error)
             transition_step_state(step, StepState.FAILED)
@@ -422,6 +504,8 @@ def run_task(task, events, action_executor=None, window_observer=None):
             return task
 
         step.tool_result = outcome
+        if step.action == "OPEN_NOTEPAD" and outcome["ok"]:
+            task.target_identity = target_identity
         if not outcome["ok"]:
             step.error = str(outcome.get("error", "Action execution failed"))
             step.verification_result = VerificationResult(
@@ -532,6 +616,7 @@ class TaskStep:
     created_at: datetime = field(default_factory=_utc_now)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    target_assessment: TargetAssessment | None = None
 
 
 @dataclass
@@ -546,3 +631,4 @@ class Task:
     created_at: datetime = field(default_factory=_utc_now)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    target_identity: TargetIdentity | None = None

@@ -13,6 +13,7 @@ class TargetConfidence(str, Enum):
 
 class TargetMatchStatus(str, Enum):
     MATCHED = "matched"
+    MISMATCH = "mismatch"
     NO_MATCH = "no_match"
     AMBIGUOUS = "ambiguous"
     UNKNOWN = "unknown"
@@ -151,6 +152,61 @@ def assess_target(
         reason="No candidate matched the expected target",
         candidate_count=candidate_count,
     )
+
+
+def assess_foreground_target(
+    expected: TargetIdentity | None,
+    foreground: TargetIdentity | None,
+) -> TargetAssessment:
+    """Assess one foreground identity and distinguish known mismatches."""
+    if foreground is None:
+        return assess_target(expected, ())
+
+    assessment = assess_target(expected, (foreground,))
+    if (
+        assessment.status is TargetMatchStatus.MATCHED
+        and assessment.confidence is TargetConfidence.LOW
+    ):
+        return TargetAssessment(
+            expected=expected,
+            matched=None,
+            confidence=TargetConfidence.LOW,
+            status=TargetMatchStatus.UNKNOWN,
+            reason="Title-only similarity is insufficient to confirm the target",
+            candidate_count=1,
+        )
+    if assessment.status is not TargetMatchStatus.NO_MATCH or expected is None:
+        return assessment
+
+    if (
+        expected.window_handle is not None
+        and foreground.window_handle is not None
+        and expected.window_handle != foreground.window_handle
+    ):
+        return TargetAssessment(
+            expected=expected,
+            matched=None,
+            confidence=TargetConfidence.HIGH,
+            status=TargetMatchStatus.MISMATCH,
+            reason="Foreground window handle differs from the expected target",
+            candidate_count=1,
+        )
+
+    if (
+        expected.process_id is not None
+        and foreground.process_id is not None
+        and expected.process_id != foreground.process_id
+    ):
+        return TargetAssessment(
+            expected=expected,
+            matched=None,
+            confidence=TargetConfidence.MEDIUM,
+            status=TargetMatchStatus.MISMATCH,
+            reason="Foreground process ID differs from the expected target",
+            candidate_count=1,
+        )
+
+    return assessment
 
 
 def _ambiguous_assessment(

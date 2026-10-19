@@ -5,6 +5,7 @@ from scripts.target_awareness import (
     TargetIdentity,
     TargetMatchStatus,
     assess_target,
+    assess_foreground_target,
 )
 
 
@@ -119,6 +120,43 @@ class TargetAssessmentTests(unittest.TestCase):
 
         self.assertEqual(assessment.status, TargetMatchStatus.UNKNOWN)
         self.assertEqual(assessment.confidence, TargetConfidence.UNKNOWN)
+        self.assertIsNone(assessment.matched)
+
+    def test_foreground_process_mismatch_has_medium_confidence(self):
+        assessment = assess_foreground_target(
+            TargetIdentity(process_id=202),
+            TargetIdentity(process_id=303),
+        )
+
+        self.assertEqual(assessment.status, TargetMatchStatus.MISMATCH)
+        self.assertEqual(assessment.confidence, TargetConfidence.MEDIUM)
+
+    def test_foreground_handle_mismatch_has_high_confidence(self):
+        assessment = assess_foreground_target(
+            TargetIdentity(window_handle=101, process_id=202),
+            TargetIdentity(window_handle=303, process_id=404),
+        )
+
+        self.assertEqual(assessment.status, TargetMatchStatus.MISMATCH)
+        self.assertEqual(assessment.confidence, TargetConfidence.HIGH)
+
+    def test_foreground_without_comparable_identity_is_unknown(self):
+        assessment = assess_foreground_target(
+            TargetIdentity(process_id=202),
+            TargetIdentity(title="Other window"),
+        )
+
+        self.assertEqual(assessment.status, TargetMatchStatus.NO_MATCH)
+        self.assertEqual(assessment.confidence, TargetConfidence.UNKNOWN)
+
+    def test_foreground_title_only_similarity_does_not_claim_a_match(self):
+        assessment = assess_foreground_target(
+            TargetIdentity(title="Notepad"),
+            TargetIdentity(title="Notepad"),
+        )
+
+        self.assertEqual(assessment.status, TargetMatchStatus.UNKNOWN)
+        self.assertEqual(assessment.confidence, TargetConfidence.LOW)
         self.assertIsNone(assessment.matched)
 
     def test_invalid_candidate_type_is_rejected(self):

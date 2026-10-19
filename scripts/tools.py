@@ -6,6 +6,11 @@ import win32process
 import time
 from dataclasses import dataclass
 
+if __package__:
+    from .target_awareness import TargetIdentity
+else:
+    from target_awareness import TargetIdentity
+
 
 @dataclass(frozen=True)
 class ForegroundWindowSnapshot:
@@ -13,6 +18,12 @@ class ForegroundWindowSnapshot:
     window_handle: int | None = None
     process_id: int | None = None
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class ActionToolResult:
+    result: object
+    target_identity: TargetIdentity | None = None
 
 
 def take_screenshot():
@@ -27,8 +38,11 @@ def move_mouse(x=500, y=500):
 
 
 def open_notepad():
-    subprocess.Popen("notepad.exe")
-    return "Opened Notepad"
+    process = subprocess.Popen("notepad.exe")
+    return ActionToolResult(
+        result="Opened Notepad",
+        target_identity=TargetIdentity(process_id=process.pid),
+    )
 
 
 def type_text(text="Hello I am your AI Agent"):
@@ -200,5 +214,10 @@ def execute_action(action):
         return result
 
     result["ok"] = True
-    result["result"] = tool_result
+    if isinstance(tool_result, ActionToolResult):
+        result["result"] = tool_result.result
+        if tool_result.target_identity is not None:
+            result["target_identity"] = tool_result.target_identity
+    else:
+        result["result"] = tool_result
     return result

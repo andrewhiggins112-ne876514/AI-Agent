@@ -232,6 +232,15 @@ matches remain LOW confidence. This assessment logic is independent of
 Windows APIs, the GUI, task execution, and verifiers; it does not alter
 execution behavior or verification outcomes.
 
+Phase 3 Step 7B.2 complete: successful `OPEN_NOTEPAD` execution associates
+the launched process ID with the task target. Before `TYPE_TEXT`, the runner
+assesses the foreground snapshot against that target. HIGH- and
+MEDIUM-confidence mismatches block dispatch, fail the step and task, and skip
+remaining steps. LOW-confidence title-only similarities are not reported as
+matches, and LOW or UNKNOWN assessments preserve existing dispatch behavior.
+Target assessments are recorded on task steps and events; `TYPE_TEXT`
+verification remains UNVERIFIED.
+
 ---
 
 ## Milestones

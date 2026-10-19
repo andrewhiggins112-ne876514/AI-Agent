@@ -22,6 +22,11 @@ from scripts.task_execution import (
     verify_action,
 )
 from scripts import tools
+from scripts.target_awareness import (
+    TargetConfidence,
+    TargetIdentity,
+    TargetMatchStatus,
+)
 
 
 class ForegroundWindowObserverTests(unittest.TestCase):
@@ -511,6 +516,257 @@ class SequentialTaskRunnerTests(unittest.TestCase):
         self.assertEqual(
             [event.event_type for event in events],
             [TaskEventType.TASK_STARTED, TaskEventType.TASK_FAILED],
+        )
+
+    def test_matched_task_target_allows_typing_and_remains_unverified(self):
+        target = TargetIdentity(process_id=5678)
+        snapshot = ForegroundWindowSnapshot(
+            title="Untitled - Notepad",
+            window_handle=1234,
+            process_id=5678,
+        )
+        task = self.make_task()
+        event_queue = Queue()
+        executed = []
+
+        def execute(action):
+            executed.append(action["action"])
+            if action["action"] == "OPEN_NOTEPAD":
+                return {
+                    "ok": True,
+                    "result": "Opened Notepad",
+                    "target_identity": target,
+                }
+            return {"ok": True, "result": "Typed: hello"}
+
+        def verify(action, outcome):
+            if action["action"] == "OPEN_NOTEPAD":
+                return VerificationResult(
+                    VerificationStatus.VERIFIED,
+                    "Notepad opened",
+                )
+            return VerificationResult(
+                VerificationStatus.UNVERIFIED,
+                "Typing cannot be read back",
+            )
+
+        with patch("scripts.task_execution.verify_action", side_effect=verify):
+            result = run_task(
+                task,
+                event_queue,
+                execute,
+                window_observer=lambda: snapshot,
+            )
+        events = self.read_events(event_queue)
+        typing_started = next(
+            event
+            for event in events
+            if event.event_type is TaskEventType.STEP_STARTED
+            and event.action == "TYPE_TEXT"
+        )
+        typing_completed = next(
+            event
+            for event in events
+            if event.event_type is TaskEventType.STEP_COMPLETED
+            and event.action == "TYPE_TEXT"
+        )
+
+        self.assertEqual(executed, ["OPEN_NOTEPAD", "TYPE_TEXT"])
+        self.assertIs(task.target_identity, target)
+        self.assertEqual(
+            task.steps[1].target_assessment.status,
+            TargetMatchStatus.MATCHED,
+        )
+        self.assertIs(
+            typing_started.target_assessment,
+            task.steps[1].target_assessment,
+        )
+        self.assertIs(
+            typing_completed.target_assessment,
+            task.steps[1].target_assessment,
+        )
+        self.assertEqual(
+            task.steps[1].verification_result.status,
+            VerificationStatus.UNVERIFIED,
+        )
+        self.assertEqual(result.state, TaskState.PARTIAL)
+
+    def test_target_mismatch_blocks_typing_and_skips_remaining_steps(self):
+        task = Task(
+            request="open notepad, type hello, take screenshot",
+            steps=[
+                TaskStep(action="OPEN_NOTEPAD", params={}),
+                TaskStep(action="TYPE_TEXT", params={"text": "hello"}),
+                TaskStep(action="TAKE_SCREENSHOT", params={}),
+            ],
+        )
+        event_queue = Queue()
+        target = TargetIdentity(process_id=5678)
+        snapshot = ForegroundWindowSnapshot(process_id=9012)
+        executed = []
+
+        def execute(action):
+            executed.append(action["action"])
+            return {
+                "ok": True,
+                "result": "Opened Notepad",
+                "target_identity": target,
+            }
+
+        with patch(
+            "scripts.task_execution.verify_action",
+            return_value=VerificationResult(
+                VerificationStatus.VERIFIED,
+                "Notepad opened",
+            ),
+        ):
+            result = run_task(
+                task,
+                event_queue,
+                execute,
+                window_observer=lambda: snapshot,
+            )
+        events = self.read_events(event_queue)
+        typing_failed = next(
+            event
+            for event in events
+            if event.event_type is TaskEventType.STEP_FAILED
+            and event.action == "TYPE_TEXT"
+        )
+
+        self.assertEqual(executed, ["OPEN_NOTEPAD"])
+        self.assertEqual(result.state, TaskState.FAILED)
+        self.assertEqual(task.steps[1].state, StepState.FAILED)
+        self.assertEqual(task.steps[2].state, StepState.SKIPPED)
+        self.assertIsNone(task.steps[1].verification_result)
+        self.assertEqual(
+            typing_failed.target_assessment.status,
+            TargetMatchStatus.MISMATCH,
+        )
+        self.assertFalse(typing_failed.result["dispatched"])
+        self.assertEqual(len(result.result), 2)
+        self.assertEqual(result.result[0]["action"], "OPEN_NOTEPAD")
+
+    def test_unknown_task_target_preserves_typing_behavior(self):
+        task = Task(
+            request="type hello",
+            steps=[TaskStep(action="TYPE_TEXT", params={"text": "hello"})],
+        )
+        event_queue = Queue()
+        executor = Mock(return_value={"ok": True, "result": "Typed: hello"})
+
+        result = run_task(
+            task,
+            event_queue,
+            executor,
+            window_observer=lambda: ForegroundWindowSnapshot(process_id=99),
+        )
+        events = self.read_events(event_queue)
+        typing_started = next(
+            event
+            for event in events
+            if event.event_type is TaskEventType.STEP_STARTED
+        )
+
+        executor.assert_called_once()
+        self.assertEqual(result.state, TaskState.PARTIAL)
+        self.assertEqual(
+            typing_started.target_assessment.status,
+            TargetMatchStatus.UNKNOWN,
+        )
+        self.assertEqual(
+            task.steps[0].verification_result.status,
+            VerificationStatus.UNVERIFIED,
+        )
+
+    def test_low_confidence_title_similarity_allows_typing_without_claiming_match(self):
+        task = Task(
+            request="type hello",
+            steps=[TaskStep(action="TYPE_TEXT", params={"text": "hello"})],
+            target_identity=TargetIdentity(title="Notepad"),
+        )
+        event_queue = Queue()
+        executor = Mock(return_value={"ok": True, "result": "Typed: hello"})
+
+        result = run_task(
+            task,
+            event_queue,
+            executor,
+            window_observer=lambda: ForegroundWindowSnapshot(title="notepad"),
+        )
+
+        executor.assert_called_once()
+        self.assertEqual(result.state, TaskState.PARTIAL)
+        self.assertEqual(
+            task.steps[0].target_assessment.status,
+            TargetMatchStatus.UNKNOWN,
+        )
+        self.assertEqual(
+            task.steps[0].target_assessment.confidence,
+            TargetConfidence.LOW,
+        )
+        self.assertEqual(
+            task.steps[0].verification_result.status,
+            VerificationStatus.UNVERIFIED,
+        )
+
+    def test_high_confidence_mismatch_blocks_typing_dispatch(self):
+        task = Task(
+            request="type hello",
+            steps=[TaskStep(action="TYPE_TEXT", params={"text": "hello"})],
+            target_identity=TargetIdentity(
+                window_handle=1234,
+                process_id=5678,
+            ),
+        )
+        event_queue = Queue()
+        executor = Mock(return_value={"ok": True, "result": "Typed: hello"})
+
+        result = run_task(
+            task,
+            event_queue,
+            executor,
+            window_observer=lambda: ForegroundWindowSnapshot(
+                window_handle=9012,
+                process_id=3456,
+            ),
+        )
+        events = self.read_events(event_queue)
+        failed_event = next(
+            event
+            for event in events
+            if event.event_type is TaskEventType.STEP_FAILED
+        )
+
+        executor.assert_not_called()
+        self.assertEqual(result.state, TaskState.FAILED)
+        self.assertEqual(
+            failed_event.target_assessment.confidence,
+            TargetConfidence.HIGH,
+        )
+        self.assertEqual(
+            failed_event.target_assessment.status,
+            TargetMatchStatus.MISMATCH,
+        )
+
+
+class NotepadTargetCaptureTests(unittest.TestCase):
+    def test_execute_action_returns_launched_process_identity(self):
+        with patch.object(
+            tools.subprocess,
+            "Popen",
+            return_value=Mock(pid=5678),
+        ) as popen:
+            outcome = tools.execute_action(
+                {"action": "OPEN_NOTEPAD", "params": {}}
+            )
+
+        popen.assert_called_once_with("notepad.exe")
+        self.assertTrue(outcome["ok"])
+        self.assertEqual(outcome["result"], "Opened Notepad")
+        self.assertEqual(
+            outcome["target_identity"],
+            TargetIdentity(process_id=5678),
         )
 
 
