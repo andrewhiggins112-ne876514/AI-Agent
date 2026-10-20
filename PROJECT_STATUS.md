@@ -333,3 +333,16 @@ The model supports lookups by document type, phase, and architecture area.
 It does not modify or execute repository contents. Semantic dependency
 resolution, inferred implementation ownership, persistence, proposal
 generation, and automatic planning remain out of scope.
+
+## Phase 5.2 — Proposal Representation
+
+An initial read-only proposal data model is implemented in
+`scripts/proposal_model.py`. It provides immutable in-memory proposal,
+evidence, qualitative confidence, option, risk, and test-plan records for
+Bug Fix, Gap, Enhancement, Refactoring, and Architecture proposals, with
+structural and type-specific readiness validation.
+
+This slice only represents and validates supplied proposal data. It does
+not generate proposals, code, patches, or commands; read or modify
+repository files; run tests; execute fixes; persist proposals; or perform
+Capability Evolution.
