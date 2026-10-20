@@ -379,3 +379,23 @@ The validator does not read or modify repository contents, execute tests
 or actions, generate code or patches, or approve proposals for
 implementation. Focused validator, proposal-model, and construction tests
 pass (36 tests); the full unittest suite passes (116 tests).
+
+### Phase 5.2.4 — Proposal Review Workflow
+
+An in-memory review boundary is implemented in
+`scripts/proposal_review_workflow.py`. It admits only a matching,
+`ACCEPT`-validated, `READY_FOR_REVIEW` Enhancement proposal for human review;
+Draft, Needs Evidence, and Rejected outcomes remain blocked as appropriate.
+Frozen review records distinguish validator quality-gate entries from
+explicit human dispositions: accepted for planning, request evidence,
+rejected, and deferred. Human review requires exact scope acknowledgement;
+requesting evidence requires at least one question.
+
+The workflow preserves proposal and validation references without mutation.
+It performs no filesystem, repository, database, or network I/O; creates no
+code, patches, or actions; and does not persist review or audit records.
+Accepted for planning is not implementation approval.
+
+Focused review workflow, proposal validation, proposal model, and proposal
+construction tests pass (47 tests); the full unittest suite passes
+(127 tests).
