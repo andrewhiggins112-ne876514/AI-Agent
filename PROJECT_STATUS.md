@@ -241,6 +241,12 @@ matches, and LOW or UNKNOWN assessments preserve existing dispatch behavior.
 Target assessments are recorded on task steps and events; `TYPE_TEXT`
 verification remains UNVERIFIED.
 
+Phase 3 Step 7B.3 complete: GUI progress output now reports target assessment
+status and confidence, expected target identity, observed foreground, and
+assessment evidence. A dispatch withheld by a target mismatch is explicitly
+labelled with its blocking explanation. No focus or verification behavior
+changed.
+
 ---
 
 ## Milestones

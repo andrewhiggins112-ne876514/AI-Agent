@@ -15,6 +15,7 @@ from task_execution import (
     VerificationResult,
     run_task,
 )
+from target_reporting import format_target_assessment
 from tools import parse_action_response
 
 
@@ -221,7 +222,20 @@ def _display_task_event(event, request):
         f"Step state: {step_state} | Verification: {verification}"
     )
     output_box.insert(tk.END, f"{line}\n")
-    if event.foreground_window is not None:
+    if event.target_assessment is not None:
+        dispatch_blocked = (
+            event.event_type is TaskEventType.STEP_FAILED
+            and isinstance(event.result, dict)
+            and event.result.get("dispatched") is False
+        )
+        for detail in format_target_assessment(
+            event.target_assessment,
+            event.foreground_window,
+            dispatch_blocked=dispatch_blocked,
+            error=event.error,
+        ):
+            output_box.insert(tk.END, f"{detail}\n")
+    elif event.foreground_window is not None:
         output_box.insert(
             tk.END,
             f"{_format_foreground_window(event.foreground_window)}\n",
