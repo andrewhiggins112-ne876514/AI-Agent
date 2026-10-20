@@ -319,3 +319,17 @@ The scanner does not execute project code, tests, or Git commands, and does
 not write to the scanned repository. Search, persistent indexing, proposal
 generation, automated testing, sandbox execution, and capability evolution
 are not implemented by this slice.
+
+## Phase 5.1.1 — Architecture Awareness
+
+An initial read-only architecture metadata layer is implemented in
+`scripts/architecture_awareness.py`. It consumes the Repository Awareness
+inventory, identifies vision, roadmap, decision, architecture, and
+implementation-plan Markdown documents, and builds an in-memory model with
+document type, title/headings, explicit phase associations, architecture
+areas, and local document-reference relationships.
+
+The model supports lookups by document type, phase, and architecture area.
+It does not modify or execute repository contents. Semantic dependency
+resolution, inferred implementation ownership, persistence, proposal
+generation, and automatic planning remain out of scope.
