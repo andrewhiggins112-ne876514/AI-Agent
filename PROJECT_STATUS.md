@@ -365,3 +365,17 @@ perform automated actions or Capability Evolution.
 Focused construction, proposal-model, repository-awareness, and
 architecture-awareness tests pass (44 tests); the full unittest suite passes
 (104 tests).
+
+### Phase 5.2.3 — Proposal Validation
+
+A pure in-memory quality validator is implemented in
+`scripts/proposal_validation.py` for Enhancement proposals. Its immutable
+result reports ACCEPT (eligible for human review only), NEEDS_EVIDENCE, or
+REJECT with categorized reasoning. It layers evidence freshness and
+applicability, qualitative confidence, completeness, and review-eligibility
+checks over `Proposal.validate()` without changing the proposal.
+
+The validator does not read or modify repository contents, execute tests
+or actions, generate code or patches, or approve proposals for
+implementation. Focused validator, proposal-model, and construction tests
+pass (36 tests); the full unittest suite passes (116 tests).
