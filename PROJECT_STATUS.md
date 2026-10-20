@@ -305,3 +305,17 @@ type_text("hello")
 Result:
 Notepad opened
 Text entered
+
+## Phase 5.1 — Repository Awareness
+
+Initial read-only repository indexing is implemented in
+`scripts/repository_awareness.py`. It discovers supported source, test,
+documentation, architecture, roadmap, decision, and configuration files and
+records relative path, file type, category, and importance metadata.
+`RepositoryIndex.build()` creates an in-memory snapshot and
+`RepositoryIndex.refresh()` performs an explicit full refresh.
+
+The scanner does not execute project code, tests, or Git commands, and does
+not write to the scanned repository. Search, persistent indexing, proposal
+generation, automated testing, sandbox execution, and capability evolution
+are not implemented by this slice.
