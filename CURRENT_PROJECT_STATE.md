@@ -1,84 +1,49 @@
 # CURRENT PROJECT STATE
 
-**State type:** Current snapshot only; replace this document when the project state changes.  
-**Last verified:** 2026-10-30 (UTC)  
-**Verification scope:** Git branch/status/remote, commit history, tracked repository inventory, and full Python unittest suite.
+**State type:** Current snapshot only; replace this document when verified project state changes.  
+**Last verified:** 2026-10-30 23:15 UTC  
+**Verification scope:** Git branch, worktree status, latest commit, and comparison with `origin/main`.
 
 ## Project Identity
 
-- **Project name:** Jarvis
-- **Repository name:** AI-Agent
-- **Project identity:** Jarvis is the product/project. The Developer Agent is a subsystem of Jarvis, not a standalone developer agent and not the whole project.
+- **Project:** Jarvis.
+- **Repository:** AI-Agent.
+- **Subsystem:** Developer Agent is a supervised Jarvis subsystem, not a standalone project.
 
-## Current Development Focus
+## Authoritative Startup Guidance
 
-The last completed implementation is the Phase 5.2.4 Proposal Review Workflow. The next recommended direction is Phase 5.3.1 Read-only Testing Awareness: test inventory and proposal-to-test mapping, without running tests or commands as part of the initial implementation.
+[JARVIS_MASTER_HANDOVER_v4.pdf](docs/JARVIS_MASTER_HANDOVER_v4.pdf) is the authoritative agent-startup and next-action document. Follow its startup sequence, constraints, scope boundaries, direction question, and Section 7 reporting format. This file is a current-state snapshot and does not override Version 4.
 
-**Implementation of Phase 5.3.1 has not started.** The recommendation is not, by itself, user approval to implement.
+## Current Development State
 
-## Current Phase and Milestones
+- **Latest implemented capability:** Phase 5.2.4 Proposal Review Workflow.
+- **Next recommended slice:** Phase 5.3.1 Read-only Testing Awareness.
+- **Approval status:** Phase 5.3.1 has not been approved for implementation and has not started. A recommendation is not approval.
+- **Latest recorded full test run:** 127 tests passed on 2026-10-30 using `python -m unittest discover -s tests -v`. This was not rerun as part of this state check.
+- **Current branch:** `main`.
+- **Latest commit:** `656dc36ff46a46aa4e8c201bc805c2494140aa37` — `Project continuity system`.
+- **Repository status:** Worktree clean; `main` matches `origin/main` (0 ahead, 0 behind) at verification.
+- **Version 4 snapshot note:** Its recorded repository baseline predates the `Project continuity system` commit. The live Git state above was checked on 2026-10-30 and should be used for current branch/revision status.
 
-- **Latest phase implemented:** Phase 5.2 — proposal representation, construction, validation, and review workflow slices.
-- **Current candidate phase:** Phase 5.3 — Testing Awareness (recommended, not started).
-- **Current subphase:** Phase 5.3.1 — read-only test inventory and proposal-to-test mapping (recommendation only; implementation approval pending).
-- **Latest completed milestone:** Phase 5.3 Options Review, completed as a documentation/recommendation milestone on 2026-10-21.
-- **Latest completed capability:** Phase 5.2.4 Proposal Review Workflow.
+## Non-Negotiable Constraints
 
-## Repository and Commit State
+- Use **free models only** and **free/open-source packages only**. Do not introduce paid APIs, commercial SDKs, or paid services. If a capability appears to require one, stop and report the limitation and any free alternatives.
+- Design within the recorded PC limits: **Intel i7-8700K, 32 GB RAM, NVIDIA GTX 1080 Ti with 11 GB VRAM, Windows**.
+- A microphone exists but is **NOT connected**. Do not undertake voice, wake-word, speech-to-text, or text-to-speech work.
+- Stop and ask whenever a request is ambiguous or outside the explicitly approved scope.
+- Do not treat a recommendation or design discussion as implementation approval. Commit and push require separate approval.
 
-- **Current branch:** `main`
-- **Latest commit:** `31b4dd8d059bcc56733622b20aa7f3f9b94f999d` — `Phase 5.3 options review`
-- **Latest implementation commit:** `65056763434e2bfe232e8ab9c28eba00057fd92e` — `Phase 5.2.4 proposal review workflow`
-- **Remote status at baseline verification:** `main` matched `origin/main` (ahead 0, behind 0).
-- **Working-tree status at baseline verification:** clean.
-- **Current documentation-only work:** `CURRENT_PROJECT_STATE.md`, `PROJECT_CONTINUITY_LOG.md`, and `NEW_AI_STARTUP_CHECKLIST.md` exist as untracked, uncommitted project documentation. No Python source or test code is changed by this work.
-- **Tracked inventory at baseline:** 57 files — 27 Markdown documents, 20 Python scripts, 9 Python test files, and `.gitignore`.
+## Hardware / Scope Notes
 
-## Latest Verified Tests
+- **Microphone:** Present but not currently connected; voice work is out of scope until it is connected and explicitly authorized.
+- **Recommended initial Testing Awareness boundary:** Read-only inventory and mapping only. Do not execute tests, commands, subprocesses, or test frameworks. Do not invent runnable commands when configuration is missing or malformed.
 
-- **Result:** 127 tests passed.
-- **Command:** `python -m unittest discover -s tests -v`
-- **Verified:** 2026-10-30.
-- **Scope:** Full discovered `unittest` suite in `tests/`.
-- This is a fresh verification for the baseline, not a claim that the v2 handover's earlier test run was repeated at that time.
+## Known Open Questions
 
-## Recommended Next Phase and Milestone
+- Whether evidence in Testing Awareness should be bound to a Git revision or content hashes.
+- Which test configuration formats and platform constraints the initial inventory should support.
+- Any changes to hardware or software facts since the Version 4 handover.
 
-- **Recommended phase:** Phase 5.3 Testing Awareness.
-- **Recommended first milestone:** Phase 5.3.1 Read-only Test Inventory and Proposal-to-Test Mapping.
-- **Initial boundary:** inspect explicit repository evidence, inventory tests/configuration/fixtures/platform notes, map a supplied proposal to candidate checks, report uncertainty, and distinguish proposed tests from executed results.
-- **Do not include in the first slice:** subprocesses, test execution, command triggering, network access, sandbox management, automatic fixes, or capability evolution.
-- **Approval state:** pending explicit user approval for the scope of any implementation.
+## Resume Rule
 
-## Open Decisions
-
-- Confirm the physical storage capacity: source documents report both 1.16 TB and a 1 TB SSD.
-- Confirm whether recorded hardware/software versions remain current through direct machine inspection.
-- Confirm whether to proceed with the recommended Phase 5.3.1 slice or choose another direction.
-- Reconcile older roadmap wording that still calls Phase 3 the current milestone with the later Phase 3 implementation records and Phase 5 progress.
-
-## Open Questions
-
-- What is the exact current Windows edition/release, Ollama version, Git version, installed package set, and model digest/tag state?
-- Should evidence in the next Testing Awareness slice be bound to a Git revision and/or content hashes before test mappings are created?
-- Which test configuration formats and platform constraints should the initial inventory support?
-
-## Known Risks
-
-- Repository awareness currently produces a bounded in-memory inventory and does not establish a Git revision/content-hash provenance model.
-- Proposal evidence metadata is supplied by callers; validation does not independently prove evidence claims.
-- Proposal review/audit records are transient in-memory objects, not durable audit history.
-- Tests and configuration can have side effects; the recommended first Testing Awareness slice must remain non-executing.
-- Phase 4 plans do not establish that durable policy, audit, configuration, or memory foundations are implemented.
-- Repeated signals, incomplete inventories, or stale documentation must not be treated as proof of a defect or user approval.
-
-## Known Assumptions
-
-- Jarvis remains local-first by default; any external model/data processing requires explicit scoped authorization.
-- Phase 5.3 Testing Awareness begins with read-only discovery and mapping, not execution.
-- The recorded 127-test suite is the latest verified count until another test run is performed.
-- Current branch and remote synchronization describe the baseline before creation of the three continuity documents; their later commit/push status must be checked afresh.
-
-## Last Significant Work
-
-Phase 5 review and Phase 5.3 options review concluded that read-only Testing Awareness is the best next direction. The review recommended test inventory and proposal-to-test mapping before sandbox execution or capability evolution. These conclusions are documented in `PHASE5_REVIEW.md` and `PHASE5_3_OPTIONS.md`; they do not authorize implementation.
+At the start of a new agent session, read Version 4 completely, perform only non-destructive Git checks, note discrepancies, ask the exact direction question in Version 4, and wait for a clear scoped answer before proceeding.
