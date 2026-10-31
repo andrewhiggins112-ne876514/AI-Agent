@@ -1,6 +1,6 @@
 # NEW AI STARTUP CHECKLIST
 
-Use this short checklist at the start of a new Jarvis agent session. Version 4 is authoritative.
+Use this short checklist at the start of a new Jarvis agent session. Version 4 is authoritative. Agents must also follow the persistent project instructions in [.github/copilot-instructions.md](.github/copilot-instructions.md).
 
 ## Startup Checklist
 

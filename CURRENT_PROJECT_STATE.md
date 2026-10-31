@@ -14,6 +14,8 @@
 
 [JARVIS_MASTER_HANDOVER_v4.pdf](docs/JARVIS_MASTER_HANDOVER_v4.pdf) is the authoritative agent-startup and next-action document. Follow its startup sequence, constraints, scope boundaries, direction question, and Section 7 reporting format. This file is a current-state snapshot and does not override Version 4.
 
+Persistent agent instructions also live in [.github/copilot-instructions.md](.github/copilot-instructions.md). This file contains the hard constraints, preferred local models, working style, documentation responsibilities, and startup behaviour for agents working on this project. A future Version 5 handover may reference this file.
+
 ## Current Development State
 
 - **Latest implemented capability:** Phase 5.2.4 Proposal Review Workflow.
