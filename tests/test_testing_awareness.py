@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from pathlib import Path
+import tempfile
 import unittest
 
 from scripts.repository_awareness import (
@@ -12,9 +13,23 @@ from scripts.repository_awareness import (
 from scripts.testing_awareness import build_testing_inventory
 
 
-def repository_index(files, *, complete=True, warnings=()):
+def repository_index(root, entries, *, complete=True, warnings=()):
+    files = []
+    for path, (content, category) in entries.items():
+        file_path = Path(root) / path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(content, encoding="utf-8")
+        files.append(
+            RepositoryFileMetadata(
+                path=path,
+                file_type=file_path.suffix.lstrip("."),
+                category=category,
+                importance=Importance.NORMAL,
+            )
+        )
+
     return RepositoryIndex(
-        root=Path("."),
+        root=Path(root),
         files=tuple(files),
         indexed_at=datetime.now(timezone.utc),
         complete=complete,
@@ -24,64 +39,153 @@ def repository_index(files, *, complete=True, warnings=()):
     )
 
 
-def indexed_file(path, category=RepositoryCategory.SOURCE):
-    return RepositoryFileMetadata(
-        path=path,
-        file_type="python",
-        category=category,
-        importance=Importance.NORMAL,
-    )
-
-
 class TestingAwarenessTests(unittest.TestCase):
     def test_discovers_test_paths_and_directories_despite_source_category(self):
-        snapshot = repository_index(
-            [
-                indexed_file("Tests/test_sample.py"),
-                indexed_file("scripts/worker_test.py"),
-                indexed_file("src/ordinary.py"),
-                indexed_file(
-                    "Tests/README.md",
-                    category=RepositoryCategory.DOCUMENTATION,
-                ),
-            ]
-        )
+        with tempfile.TemporaryDirectory() as root:
+            snapshot = repository_index(
+                root,
+                {
+                    "Tests/test_sample.py": (
+                        "import pytest\n"
+                        "@pytest.fixture\n"
+                        "def sample():\n"
+                        "    return sys.platform\n"
+                        "raise RuntimeError('must not execute')\n",
+                        RepositoryCategory.SOURCE,
+                    ),
+                    "scripts/worker_test.py": (
+                        "import unittest\n"
+                        "import win32gui\n"
+                        "class Example(unittest.TestCase):\n"
+                        "    def setUp(self): pass\n",
+                        RepositoryCategory.SOURCE,
+                    ),
+                    "Tests/README.md": (
+                        "Test notes",
+                        RepositoryCategory.DOCUMENTATION,
+                    ),
+                    "tests/fixtures/helpers.py": (
+                        "def helper(): return 1\n",
+                        RepositoryCategory.SOURCE,
+                    ),
+                    "src/ordinary.py": (
+                        "raise RuntimeError('must not execute')\n",
+                        RepositoryCategory.SOURCE,
+                    ),
+                    "pytest.ini": (
+                        "[pytest]\naddopts = -q\n",
+                        RepositoryCategory.OTHER,
+                    ),
+                },
+            )
 
-        inventory = build_testing_inventory(snapshot)
+            inventory = build_testing_inventory(snapshot)
 
         self.assertEqual(
             inventory.test_files,
             ("scripts/worker_test.py", "Tests/test_sample.py"),
         )
         self.assertEqual(inventory.test_directories, ("Tests",))
-
-    def test_reports_configuration_candidate_without_claiming_it_is_valid(self):
-        snapshot = repository_index(
-            [
-                indexed_file(
-                    "PYPROJECT.TOML",
-                    category=RepositoryCategory.OTHER,
-                )
-            ]
+        self.assertEqual(inventory.frameworks, ("pytest", "unittest"))
+        self.assertIn(
+            "Tests/test_sample.py: pytest fixture decorator",
+            inventory.fixture_indicators,
         )
-
-        inventory = build_testing_inventory(snapshot)
-
-        self.assertEqual(inventory.configuration_candidates, ("PYPROJECT.TOML",))
+        self.assertIn(
+            "scripts/worker_test.py: unittest lifecycle method setUp",
+            inventory.fixture_indicators,
+        )
+        self.assertIn(
+            "tests/fixtures/helpers.py: file is in a fixture directory",
+            inventory.fixture_indicators,
+        )
+        self.assertIn(
+            "scripts/worker_test.py: imports Windows API module win32gui",
+            inventory.platform_indicators,
+        )
+        self.assertIn(
+            "Tests/test_sample.py: references sys.platform",
+            inventory.platform_indicators,
+        )
         self.assertTrue(inventory.complete)
-        self.assertIn("contents were not inspected", inventory.warnings[0])
 
-    def test_missing_configuration_and_incomplete_index_are_disclosed(self):
-        snapshot = repository_index(
-            [indexed_file("tests/test_sample.py")],
-            complete=False,
-            warnings=("tests: Maximum scan depth reached",),
-        )
+    def test_parses_pytest_configuration_candidate(self):
+        with tempfile.TemporaryDirectory() as root:
+            snapshot = repository_index(
+                root,
+                {
+                    "pyproject.toml": (
+                        "[tool.pytest.ini_options]\naddopts = '-q'\n",
+                        RepositoryCategory.OTHER,
+                    )
+                },
+            )
 
-        inventory = build_testing_inventory(snapshot)
+            inventory = build_testing_inventory(snapshot)
+
+        self.assertEqual(inventory.configuration_candidates, ("pyproject.toml",))
+        self.assertEqual(inventory.frameworks, ("pytest",))
+        self.assertTrue(inventory.complete)
+
+    def test_malformed_and_oversized_evidence_is_incomplete(self):
+        with tempfile.TemporaryDirectory() as root:
+            snapshot = repository_index(
+                root,
+                {
+                    "pytest.ini": (
+                        "not a valid section header\n",
+                        RepositoryCategory.OTHER,
+                    ),
+                    "tests/test_large.py": (
+                        " " * (64 * 1024 + 1),
+                        RepositoryCategory.TEST,
+                    ),
+                },
+            )
+
+            inventory = build_testing_inventory(snapshot)
 
         self.assertFalse(inventory.complete)
-        self.assertIn("framework configuration is unknown", inventory.warnings[-1])
+        self.assertTrue(
+            any(
+                "malformed INI configuration" in warning
+                for warning in inventory.warnings
+            )
+        )
+        self.assertFalse(
+            any(
+                "not a valid section header" in warning
+                for warning in inventory.warnings
+            )
+        )
+        self.assertTrue(
+            any(
+                "exceeds the 65536-byte evidence limit" in warning
+                for warning in inventory.warnings
+            )
+        )
+
+    def test_missing_configuration_and_incomplete_index_are_disclosed(self):
+        with tempfile.TemporaryDirectory() as root:
+            snapshot = repository_index(
+                root,
+                {
+                    "tests/test_sample.py": (
+                        "import unittest\n",
+                        RepositoryCategory.TEST,
+                    )
+                },
+                complete=False,
+                warnings=("tests: Maximum scan depth reached",),
+            )
+
+            inventory = build_testing_inventory(snapshot)
+
+        self.assertFalse(inventory.complete)
+        self.assertIn(
+            "No recognized test configuration file",
+            "\n".join(inventory.warnings),
+        )
         self.assertIn("Maximum scan depth reached", inventory.warnings[0])
 
 

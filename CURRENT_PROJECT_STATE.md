@@ -2,7 +2,7 @@
 
 **State type:** Current snapshot only; replace this document when verified project state changes.  
 **Last verified:** 2026-11-01
-**Verification scope:** Git branch, worktree status, HEAD, static read-only test inventory, and focused Testing Awareness implementation/tests. No full test suite or GUI scripts were run.
+**Verification scope:** Git branch, worktree status, HEAD, enriched read-only Testing Awareness inventory, and its focused tests. No full test suite or GUI scripts were run.
 
 ## Project Identity
 
@@ -18,16 +18,16 @@ Persistent agent instructions also live in [.github/copilot-instructions.md](.gi
 
 ## Current Development State
 
-- **Latest implemented capability:** Initial Phase 5.3.1 read-only test inventory; latest completed milestone remains Phase 5.2.4 Proposal Review Workflow.
+- **Latest implemented capability:** Enriched Phase 5.3.1 read-only test inventory; latest completed milestone remains Phase 5.2.4 Proposal Review Workflow.
 - **Next recommended slice:** Phase 5.3.1 Read-only Testing Awareness.
-- **Phase 5.3.1 status:** The read-only inventory function in `scripts/testing_awareness.py` reports test files/directories and conventional test-configuration candidates from a supplied `RepositoryIndex`; it does not inspect configuration contents or execute commands/tests. It recognizes test path/name conventions even if category metadata differs. Missing configuration candidates and incomplete source indexes are reported as unknown/incomplete. Three focused inventory tests pass; fixture/platform discovery and proposal-to-test mapping are not implemented.
-- **Test inventory:** The original static inventory found nine `unittest` files with 127 methods; the new focused module adds three tests (ten files, 130 declared methods total). The latest recorded full-suite result remains 127 tests passed on 2026-10-30 using `python -m unittest discover -s tests -v`, before the new tests; it was not rerun.
+- **Phase 5.3.1 status:** The read-only inventory in `scripts/testing_awareness.py` reports test files/directories, parses conventional pytest configuration markers, and identifies static framework imports, fixture indicators, and platform-specific references from an explicitly indexed snapshot. It distinguishes fixture-directory helpers from test modules, reads only indexed configuration/test/fixture Python files, limits each read to 64 KiB, confines resolved paths to the repository root, and never imports or executes project code. Missing, unreadable, malformed, oversized, or unsupported evidence is disclosed as incomplete/unknown. Configuration semantics beyond recognized markers remain unknown. Proposal-to-test mapping is not implemented.
+- **Test inventory:** The original static inventory found nine `unittest` files with 127 methods; the focused inventory module adds four tests (ten files, 131 declared methods total). All four focused tests passed with `python -m unittest discover -s tests -p test_testing_awareness.py -v`. The latest recorded full-suite result remains 127 tests passed on 2026-10-30 using `python -m unittest discover -s tests -v`, before the focused module; the full suite was not rerun.
 - **Additional test-related scripts:** `scripts/test.py` is a print-only script. `scripts/mouse_test.py`, `scripts/typing_test.py`, and `scripts/ui_test.py` are separate GUI-oriented scripts; the mouse and typing scripts can interact with the desktop.
 - **Platform and dependencies:** Tests import Windows-facing dependencies through `scripts.tools`, including `pyautogui`, `win32gui`, and `win32process`. No dependency manifest or test-runner configuration was found in the repository inventory.
-- **Next recommended step (not started):** Review the focused implementation and tests. Any fixture/platform inventory expansion or proposal-to-test mapping requires separate approval.
+- **Next recommended step (not started):** Consider a separate human-readable testing-status report over the inventory. Workflow integration and proposal-to-test mapping remain deferred pending separate approval.
 - **Current branch:** `main`.
-- **Latest commit:** `46202c813594b01b47bcff194349d76e13ed589e` — `Add read-only testing inventory`.
-- **Repository status:** The initial implementation and state update are committed; the focused follow-up changes are uncommitted. An unrelated pre-existing edit to `.github/copilot-instructions.md` was left untouched.
+- **Latest commit:** `c5398750d54e088fff111b805b48c5ece0ef11d3` — `Improve testing inventory detection and add focused unit tests`.
+- **Repository status:** The previously approved inventory changes are committed and pushed; the enriched inventory and state update are uncommitted.
 - **Version 4 snapshot note:** Its recorded repository baseline (`31b4dd8d059bcc56733622b20aa7f3f9b94f999d`) differs from the live HEAD above.
 
 ## Non-Negotiable Constraints
