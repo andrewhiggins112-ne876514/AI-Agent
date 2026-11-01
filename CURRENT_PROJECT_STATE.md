@@ -1,8 +1,8 @@
 # CURRENT PROJECT STATE
 
 **State type:** Current snapshot only; replace this document when verified project state changes.  
-**Last verified:** 2026-10-30 23:15 UTC  
-**Verification scope:** Git branch, worktree status, latest commit, and comparison with `origin/main`.
+**Last verified:** 2026-11-01
+**Verification scope:** Git branch, worktree status, HEAD, static read-only test inventory, and the initial Testing Awareness implementation. No tests or scripts were run.
 
 ## Project Identity
 
@@ -18,14 +18,17 @@ Persistent agent instructions also live in [.github/copilot-instructions.md](.gi
 
 ## Current Development State
 
-- **Latest implemented capability:** Phase 5.2.4 Proposal Review Workflow.
+- **Latest implemented capability:** Initial Phase 5.3.1 read-only test inventory; latest completed milestone remains Phase 5.2.4 Proposal Review Workflow.
 - **Next recommended slice:** Phase 5.3.1 Read-only Testing Awareness.
-- **Approval status:** Phase 5.3.1 has not been approved for implementation and has not started. A recommendation is not approval.
-- **Latest recorded full test run:** 127 tests passed on 2026-10-30 using `python -m unittest discover -s tests -v`. This was not rerun as part of this state check.
+- **Phase 5.3.1 status:** The initial read-only inventory function is implemented in `scripts/testing_awareness.py`. It reports test-file paths and conventional test-configuration filename candidates from a supplied `RepositoryIndex`; it does not inspect configuration contents or execute commands/tests. Missing configuration candidates and incomplete source indexes are reported as incomplete/unknown. Fixture/platform discovery and proposal-to-test mapping are not implemented.
+- **Test inventory:** Nine `unittest` files under `tests/` contain 127 statically declared test methods. The latest recorded full-suite result is 127 tests passed on 2026-10-30 using `python -m unittest discover -s tests -v`; this historical result was not rerun.
+- **Additional test-related scripts:** `scripts/test.py` is a print-only script. `scripts/mouse_test.py`, `scripts/typing_test.py`, and `scripts/ui_test.py` are separate GUI-oriented scripts; the mouse and typing scripts can interact with the desktop.
+- **Platform and dependencies:** Tests import Windows-facing dependencies through `scripts.tools`, including `pyautogui`, `win32gui`, and `win32process`. No dependency manifest or test-runner configuration was found in the repository inventory.
+- **Next recommended step (not started):** After review, decide whether to add focused tests for the inventory function and/or expand read-only fixture and platform-constraint reporting. Proposal-to-test mapping remains deferred.
 - **Current branch:** `main`.
-- **Latest commit:** `656dc36ff46a46aa4e8c201bc805c2494140aa37` — `Project continuity system`.
-- **Repository status:** Worktree clean; `main` matches `origin/main` (0 ahead, 0 behind) at verification.
-- **Version 4 snapshot note:** Its recorded repository baseline predates the `Project continuity system` commit. The live Git state above was checked on 2026-10-30 and should be used for current branch/revision status.
+- **Latest commit:** `e5484bb43194cbbda747679b474b33f097708435`.
+- **Repository status:** Worktree was clean at the pre-change check; the approved implementation and state update are now uncommitted.
+- **Version 4 snapshot note:** Its recorded repository baseline (`31b4dd8d059bcc56733622b20aa7f3f9b94f999d`) differs from the live HEAD above.
 
 ## Non-Negotiable Constraints
 
@@ -38,12 +41,13 @@ Persistent agent instructions also live in [.github/copilot-instructions.md](.gi
 ## Hardware / Scope Notes
 
 - **Microphone:** Present but not currently connected; voice work is out of scope until it is connected and explicitly authorized.
-- **Recommended initial Testing Awareness boundary:** Read-only inventory and mapping only. Do not execute tests, commands, subprocesses, or test frameworks. Do not invent runnable commands when configuration is missing or malformed.
+- **Testing Awareness boundary:** Read-only inventory and mapping only. No tests, commands, subprocesses, or test frameworks may be executed without explicit approval. Do not invent runnable commands when configuration is missing or malformed. Individual proposal-to-test mapping remains deferred.
 
 ## Known Open Questions
 
 - Whether evidence in Testing Awareness should be bound to a Git revision or content hashes.
 - Which test configuration formats and platform constraints the initial inventory should support.
+- How fixture and platform constraints should be represented in the inventory.
 - Any changes to hardware or software facts since the Version 4 handover.
 
 ## Resume Rule
