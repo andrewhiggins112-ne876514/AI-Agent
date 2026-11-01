@@ -263,5 +263,30 @@ class TestingReportFormattingTests(unittest.TestCase):
             self.assertIn(f"{heading}\n- None found", report)
 
 
+class RepositoryTestingReportIntegrationTests(unittest.TestCase):
+    def test_repository_snapshot_exposes_testing_status_report(self):
+        with tempfile.TemporaryDirectory() as root:
+            snapshot = repository_index(
+                root,
+                {
+                    "tests/test_sample.py": (
+                        "import unittest\n",
+                        RepositoryCategory.TEST,
+                    ),
+                    "pytest.ini": (
+                        "[pytest]\n",
+                        RepositoryCategory.OTHER,
+                    ),
+                },
+            )
+
+            report = snapshot.testing_status_report()
+
+        self.assertIn("Tests have not been run: NOT RUN", report)
+        self.assertIn("Inventory completeness: COMPLETE", report)
+        self.assertIn("- tests/test_sample.py", report)
+        self.assertIn("- pytest.ini", report)
+
+
 if __name__ == "__main__":
     unittest.main()

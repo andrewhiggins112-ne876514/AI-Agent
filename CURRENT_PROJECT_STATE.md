@@ -2,7 +2,7 @@
 
 **State type:** Current snapshot only; replace this document when verified project state changes.  
 **Last verified:** 2026-11-01
-**Verification scope:** Git branch, worktree status, HEAD, enriched read-only Testing Awareness inventory, and its focused tests. No full test suite or GUI scripts were run.
+**Verification scope:** Git branch, worktree status, HEAD, repository-integrated read-only Testing Awareness report, and focused tests. No full test suite or GUI scripts were run.
 
 ## Project Identity
 
@@ -18,16 +18,16 @@ Persistent agent instructions also live in [.github/copilot-instructions.md](.gi
 
 ## Current Development State
 
-- **Latest implemented capability:** Enriched Phase 5.3.1 read-only test inventory; latest completed milestone remains Phase 5.2.4 Proposal Review Workflow.
+- **Latest implemented capability:** Repository-integrated Phase 5.3.1 testing status report; latest completed milestone remains Phase 5.2.4 Proposal Review Workflow.
 - **Next recommended slice:** Phase 5.3.1 Read-only Testing Awareness.
-- **Phase 5.3.1 status:** The read-only inventory in `scripts/testing_awareness.py` reports test files/directories, parses conventional pytest configuration markers, and identifies static framework imports, fixture indicators, and platform-specific references from an explicitly indexed snapshot. It distinguishes fixture-directory helpers from test modules, reads only indexed configuration/test/fixture Python files, limits each read to 64 KiB, confines resolved paths to the repository root, and never imports or executes project code. `format_testing_report` provides a deterministic plain-text summary of the inventory, warnings, completeness, and explicit `NOT RUN` test status. Missing, unreadable, malformed, oversized, or unsupported evidence is disclosed as incomplete/unknown. Configuration semantics beyond recognized markers remain unknown. Workflow integration and proposal-to-test mapping are not implemented.
-- **Test inventory:** The original static inventory found nine `unittest` files with 127 methods; the inventory module now adds six focused tests (ten files, 133 declared methods total). All six focused tests passed with `python -m unittest discover -s tests -p test_testing_awareness.py -v`. The latest recorded full-suite result remains 127 tests passed on 2026-10-30 using `python -m unittest discover -s tests -v`, before the focused module; the full suite was not rerun.
+- **Phase 5.3.1 status:** The read-only inventory in `scripts/testing_awareness.py` reports test files/directories, parses conventional pytest configuration markers, and identifies static framework imports, fixture indicators, and platform-specific references from an explicitly indexed snapshot. It distinguishes fixture-directory helpers from test modules, reads only indexed configuration/test/fixture Python files, limits each read to 64 KiB, confines resolved paths to the repository root, and never imports or executes project code. `format_testing_report` provides a deterministic plain-text summary of the inventory, warnings, completeness, and explicit `NOT RUN` test status. The existing `RepositoryIndex.testing_status_report()` surface exposes this report directly from an already-built repository snapshot without rescanning. Missing, unreadable, malformed, oversized, or unsupported evidence is disclosed as incomplete/unknown. Configuration semantics beyond recognized markers remain unknown. Proposal-to-test mapping is not implemented.
+- **Test inventory:** The original static inventory found nine `unittest` files with 127 methods; the testing-awareness module now adds seven focused tests (ten files, 134 declared methods total). All seven focused tests passed with `python -m unittest discover -s tests -p test_testing_awareness.py -v`. The latest recorded full-suite result remains 127 tests passed on 2026-10-30 using `python -m unittest discover -s tests -v`, before the focused module; the full suite was not rerun.
 - **Additional test-related scripts:** `scripts/test.py` is a print-only script. `scripts/mouse_test.py`, `scripts/typing_test.py`, and `scripts/ui_test.py` are separate GUI-oriented scripts; the mouse and typing scripts can interact with the desktop.
 - **Platform and dependencies:** Tests import Windows-facing dependencies through `scripts.tools`, including `pyautogui`, `win32gui`, and `win32process`. No dependency manifest or test-runner configuration was found in the repository inventory.
-- **Next recommended step (not started):** Review the standalone testing-status report. Workflow integration and proposal-to-test mapping remain deferred pending separate approval.
+- **Next recommended step (not started):** Review the repository-integrated testing-status report. Proposal-to-test mapping remains deferred pending separate approval.
 - **Current branch:** `main`.
-- **Latest commit:** `72eb8852b20eb1a30fe84a7702f978caa804df5c` — `Enrich testing inventory with static framework, fixture and platform indicators`.
-- **Repository status:** The enriched inventory changes are committed and pushed; the report formatter and state update are uncommitted.
+- **Latest commit:** `2d0276879d39ced2e189b17a9047326f2395a0e3` — `Add deterministic human-readable testing status report`.
+- **Repository status:** The baseline was clean before the repository integration; the integration and state update are now uncommitted.
 - **Version 4 snapshot note:** Its recorded repository baseline (`31b4dd8d059bcc56733622b20aa7f3f9b94f999d`) differs from the live HEAD above.
 
 ## Non-Negotiable Constraints

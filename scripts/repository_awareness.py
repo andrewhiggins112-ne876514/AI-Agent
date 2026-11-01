@@ -86,6 +86,15 @@ class RepositoryIndex:
         """Manually rebuild this snapshot from its original repository root."""
         return type(self).build(self.root, self.limits)
 
+    def testing_status_report(self) -> str:
+        """Format static testing awareness for this already-built snapshot."""
+        from .testing_awareness import (
+            build_testing_inventory,
+            format_testing_report,
+        )
+
+        return format_testing_report(build_testing_inventory(self))
+
 
 class _RepositoryScanner:
     _SOURCE_TYPES = {".py", ".pyi"}
