@@ -2,7 +2,7 @@
 
 **State type:** Current snapshot only; replace this document when verified project state changes.  
 **Last verified:** 2026-11-01
-**Verification scope:** Git branch, worktree status, HEAD, static read-only test inventory, and the initial Testing Awareness implementation. No tests or scripts were run.
+**Verification scope:** Git branch, worktree status, HEAD, static read-only test inventory, and focused Testing Awareness implementation/tests. No full test suite or GUI scripts were run.
 
 ## Project Identity
 
@@ -20,14 +20,14 @@ Persistent agent instructions also live in [.github/copilot-instructions.md](.gi
 
 - **Latest implemented capability:** Initial Phase 5.3.1 read-only test inventory; latest completed milestone remains Phase 5.2.4 Proposal Review Workflow.
 - **Next recommended slice:** Phase 5.3.1 Read-only Testing Awareness.
-- **Phase 5.3.1 status:** The initial read-only inventory function is implemented in `scripts/testing_awareness.py`. It reports test-file paths and conventional test-configuration filename candidates from a supplied `RepositoryIndex`; it does not inspect configuration contents or execute commands/tests. Missing configuration candidates and incomplete source indexes are reported as incomplete/unknown. Fixture/platform discovery and proposal-to-test mapping are not implemented.
-- **Test inventory:** Nine `unittest` files under `tests/` contain 127 statically declared test methods. The latest recorded full-suite result is 127 tests passed on 2026-10-30 using `python -m unittest discover -s tests -v`; this historical result was not rerun.
+- **Phase 5.3.1 status:** The read-only inventory function in `scripts/testing_awareness.py` reports test files/directories and conventional test-configuration candidates from a supplied `RepositoryIndex`; it does not inspect configuration contents or execute commands/tests. It recognizes test path/name conventions even if category metadata differs. Missing configuration candidates and incomplete source indexes are reported as unknown/incomplete. Three focused inventory tests pass; fixture/platform discovery and proposal-to-test mapping are not implemented.
+- **Test inventory:** The original static inventory found nine `unittest` files with 127 methods; the new focused module adds three tests (ten files, 130 declared methods total). The latest recorded full-suite result remains 127 tests passed on 2026-10-30 using `python -m unittest discover -s tests -v`, before the new tests; it was not rerun.
 - **Additional test-related scripts:** `scripts/test.py` is a print-only script. `scripts/mouse_test.py`, `scripts/typing_test.py`, and `scripts/ui_test.py` are separate GUI-oriented scripts; the mouse and typing scripts can interact with the desktop.
 - **Platform and dependencies:** Tests import Windows-facing dependencies through `scripts.tools`, including `pyautogui`, `win32gui`, and `win32process`. No dependency manifest or test-runner configuration was found in the repository inventory.
-- **Next recommended step (not started):** After review, decide whether to add focused tests for the inventory function and/or expand read-only fixture and platform-constraint reporting. Proposal-to-test mapping remains deferred.
+- **Next recommended step (not started):** Review the focused implementation and tests. Any fixture/platform inventory expansion or proposal-to-test mapping requires separate approval.
 - **Current branch:** `main`.
-- **Latest commit:** `e5484bb43194cbbda747679b474b33f097708435`.
-- **Repository status:** Worktree was clean at the pre-change check; the approved implementation and state update are now uncommitted.
+- **Latest commit:** `46202c813594b01b47bcff194349d76e13ed589e` — `Add read-only testing inventory`.
+- **Repository status:** The initial implementation and state update are committed; the focused follow-up changes are uncommitted. An unrelated pre-existing edit to `.github/copilot-instructions.md` was left untouched.
 - **Version 4 snapshot note:** Its recorded repository baseline (`31b4dd8d059bcc56733622b20aa7f3f9b94f999d`) differs from the live HEAD above.
 
 ## Non-Negotiable Constraints
