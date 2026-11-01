@@ -10,7 +10,11 @@ from scripts.repository_awareness import (
     RepositoryFileMetadata,
     RepositoryIndex,
 )
-from scripts.testing_awareness import build_testing_inventory
+from scripts.testing_awareness import (
+    TestingInventory,
+    build_testing_inventory,
+    format_testing_report,
+)
 
 
 def repository_index(root, entries, *, complete=True, warnings=()):
@@ -187,6 +191,76 @@ class TestingAwarenessTests(unittest.TestCase):
             "\n".join(inventory.warnings),
         )
         self.assertIn("Maximum scan depth reached", inventory.warnings[0])
+
+
+class TestingReportFormattingTests(unittest.TestCase):
+    def test_formats_all_inventory_sections_and_not_run_status(self):
+        inventory = TestingInventory(
+            test_files=("tests/test_sample.py",),
+            test_directories=("tests",),
+            configuration_candidates=("pytest.ini",),
+            frameworks=("pytest",),
+            fixture_indicators=("tests/conftest.py: pytest fixture discovery file",),
+            platform_indicators=("tests/test_sample.py: references sys.platform",),
+            complete=True,
+            warnings=("Configuration contents are unknown.",),
+        )
+
+        report = format_testing_report(inventory)
+
+        self.assertEqual(
+            report,
+            "\n".join(
+                (
+                    "Testing status report",
+                    "======================",
+                    "Tests have not been run: NOT RUN",
+                    "Inventory completeness: COMPLETE",
+                    "Test directories:",
+                    "- tests",
+                    "Test files:",
+                    "- tests/test_sample.py",
+                    "Configuration candidates:",
+                    "- pytest.ini",
+                    "Framework indicators:",
+                    "- pytest",
+                    "Fixture indicators:",
+                    "- tests/conftest.py: pytest fixture discovery file",
+                    "Platform indicators:",
+                    "- tests/test_sample.py: references sys.platform",
+                    "Warnings:",
+                    "- Configuration contents are unknown.",
+                )
+            ),
+        )
+
+    def test_empty_incomplete_inventory_shows_each_section(self):
+        inventory = TestingInventory(
+            test_files=(),
+            test_directories=(),
+            configuration_candidates=(),
+            frameworks=(),
+            fixture_indicators=(),
+            platform_indicators=(),
+            complete=False,
+            warnings=(),
+        )
+
+        report = format_testing_report(inventory)
+
+        self.assertIn("Tests have not been run: NOT RUN", report)
+        self.assertIn("Inventory completeness: INCOMPLETE", report)
+        for heading in (
+            "Test directories:",
+            "Test files:",
+            "Configuration candidates:",
+            "Framework indicators:",
+            "Fixture indicators:",
+            "Platform indicators:",
+            "Warnings:",
+        ):
+            self.assertIn(heading, report)
+            self.assertIn(f"{heading}\n- None found", report)
 
 
 if __name__ == "__main__":

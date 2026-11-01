@@ -49,6 +49,31 @@ class TestingInventory:
     warnings: tuple[str, ...]
 
 
+def format_testing_report(inventory: TestingInventory) -> str:
+    """Format an inventory as deterministic plain text; does not run tests."""
+    lines = [
+        "Testing status report",
+        "======================",
+        "Tests have not been run: NOT RUN",
+        f"Inventory completeness: {'COMPLETE' if inventory.complete else 'INCOMPLETE'}",
+    ]
+    sections = (
+        ("Test directories", inventory.test_directories),
+        ("Test files", inventory.test_files),
+        ("Configuration candidates", inventory.configuration_candidates),
+        ("Framework indicators", inventory.frameworks),
+        ("Fixture indicators", inventory.fixture_indicators),
+        ("Platform indicators", inventory.platform_indicators),
+        ("Warnings", inventory.warnings),
+    )
+    for title, items in sections:
+        lines.append(f"{title}:")
+        lines.extend(f"- {item}" for item in items)
+        if not items:
+            lines.append("- None found")
+    return "\n".join(lines)
+
+
 def build_testing_inventory(snapshot: RepositoryIndex) -> TestingInventory:
     """Summarize bounded static evidence without importing or executing code."""
     test_files = tuple(
